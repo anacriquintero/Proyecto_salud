@@ -44,21 +44,6 @@ El sistema soporta los siguientes roles profesionales:
 - **Offline Support**: Funcionalidad sin conexión
 - **PWA Ready**: Preparado para Progressive Web App
 
-## 🛠️ Instalación
-
-```bash
-# Clonar el repositorio
-git clone https://github.com/MafeTello/APS_uao.git
-
-# Navegar al directorio
-cd APS_uao
-
-# Instalar dependencias
-npm install
-
-# Ejecutar en desarrollo
-npm run dev
-```
 
 ## 🔧 Scripts Disponibles
 
@@ -68,23 +53,23 @@ npm run build    # Build para producción
 npm run preview  # Preview del build
 npm run lint     # Linter ESLint
 ```
+# 🏥 Salud Digital APS - Sistema de Gestión
 
-## 📁 Estructura del Proyecto
+## 📋 Descripción
+Sistema de gestión para programas de Atención Primaria en Salud (APS) que optimiza el registro de información clínica y administrativa.
 
-```
-src/
-├── components/          # Componentes reutilizables
-│   ├── LoginForm.tsx   # Formulario de autenticación
-│   ├── ProtectedRoute.tsx # Control de acceso
-│   └── UserProfile.tsx # Perfil de usuario
-├── hooks/              # Custom hooks
-│   └── useAuth.ts     # Hook de autenticación
-├── services/           # Servicios y APIs
-│   └── authService.ts # Servicio de autenticación
-├── types/              # Definiciones TypeScript
-│   └── auth.ts        # Tipos de autenticación
-└── App.tsx            # Componente principal
-```
+## 🏗️ Arquitectura
+- **Frontend**: React 18 + TypeScript + Vite + Tailwind CSS
+- **Backend**: Node.js + Express + SQLite
+- **Base de Datos**: SQLite con 16 tablas
+
+## 🚀 Instalación y Ejecución
+
+### Backend
+```bash
+cd backend
+npm install
+npm run dev
 
 ## 🔐 Autenticación
 
