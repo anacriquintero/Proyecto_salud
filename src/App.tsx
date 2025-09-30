@@ -1,0 +1,1189 @@
+import React, { useMemo, useState } from "react";
+import { useAuth } from "./hooks/useAuth";
+import { LoginForm } from "./components/LoginForm";
+import { ProtectedRoute } from "./components/ProtectedRoute";
+import { UserProfile } from "./components/UserProfile";
+import { 
+  User, 
+  Users, 
+  Calendar, 
+  FileText, 
+  Activity, 
+  Search, 
+  BarChart3, 
+  Settings, 
+  HelpCircle,
+  Stethoscope,
+  Brain,
+  Dumbbell,
+  Apple,
+  Ear,
+  Smile,
+  Shield,
+  UserCheck,
+  Building2,
+  Eye,
+  ChevronRight,
+  Plus,
+  Clock,
+  AlertTriangle,
+  CheckCircle,
+  XCircle,
+  Menu,
+  X,
+  Phone,
+  MapPin,
+  Camera,
+  Mic,
+  Save,
+  Send,
+  Home,
+  ChevronDown,
+  Filter,
+  Bell,
+  Wifi,
+  WifiOff,
+  ClipboardList,
+  Heart,
+  Briefcase,
+  TrendingUp,
+  AlertCircle,
+  Download,
+  Upload,
+  Calendar as CalendarIcon,
+  UserPlus,
+  FileCheck,
+  Target,
+  Globe,
+  LogOut
+} from "lucide-react";
+
+// Configuración completa de todos los roles de usuario
+export const USER_ROLES = {
+  medico: {
+    name: "Médico",
+    icon: Stethoscope,
+    color: "emerald",
+    mainSections: [
+      { key: "crear-familia", label: "Crear Familia", icon: Users },
+      { key: "consultas-asignadas", label: "Consultas Asignadas", icon: Calendar },
+      { key: "consultas-realizadas", label: "Consultas Realizadas", icon: CheckCircle },
+      { key: "bitacora", label: "Bitácora", icon: Activity }
+    ],
+    sidebarSections: [
+      { key: "bd-pacientes", label: "BD Pacientes", icon: Search },
+      { key: "dashboard-epidemio", label: "Dashboard", icon: BarChart3 },
+      { key: "configuracion", label: "Configuración", icon: Settings },
+      { key: "ayuda", label: "Ayuda", icon: HelpCircle }
+    ]
+  },
+  psicologo: {
+    name: "Psicólogo",
+    icon: Brain,
+    color: "emerald",
+    mainSections: [
+      { key: "crear-familia", label: "Crear Familia", icon: Users },
+      { key: "consultas-asignadas", label: "Consultas Asignadas", icon: Calendar },
+      { key: "consultas-realizadas", label: "Consultas Realizadas", icon: CheckCircle },
+      { key: "educacion-salud", label: "Educación en Salud", icon: FileText },
+      { key: "bitacora", label: "Bitácora", icon: Activity }
+    ],
+    sidebarSections: [
+      { key: "bd-pacientes", label: "BD Pacientes", icon: Search },
+      { key: "dashboard-psicologia", label: "Dashboard", icon: BarChart3 },
+      { key: "configuracion", label: "Configuración", icon: Settings },
+      { key: "ayuda", label: "Ayuda", icon: HelpCircle }
+    ]
+  },
+  fisioterapeuta: {
+    name: "Fisioterapeuta",
+    icon: Dumbbell,
+    color: "emerald",
+    mainSections: [
+      { key: "crear-familia", label: "Crear Familia", icon: Users },
+      { key: "terapias-asignadas", label: "Terapias Asignadas", icon: Calendar },
+      { key: "terapias-realizadas", label: "Terapias Realizadas", icon: CheckCircle },
+      { key: "educacion-salud", label: "Educación en Salud", icon: FileText },
+      { key: "bitacora", label: "Bitácora", icon: Activity }
+    ],
+    sidebarSections: [
+      { key: "bd-pacientes", label: "BD Pacientes", icon: Search },
+      { key: "dashboard-fisioterapia", label: "Dashboard", icon: BarChart3 },
+      { key: "configuracion", label: "Configuración", icon: Settings },
+      { key: "ayuda", label: "Ayuda", icon: HelpCircle }
+    ]
+  },
+  nutricionista: {
+    name: "Nutricionista",
+    icon: Apple,
+    color: "emerald",
+    mainSections: [
+      { key: "crear-familia", label: "Crear Familia", icon: Users },
+      { key: "consultas-asignadas", label: "Consultas Asignadas", icon: Calendar },
+      { key: "consultas-realizadas", label: "Consultas Realizadas", icon: CheckCircle },
+      { key: "educacion-salud", label: "Educación en Salud", icon: FileText },
+      { key: "bitacora", label: "Bitácora", icon: Activity }
+    ],
+    sidebarSections: [
+      { key: "bd-pacientes", label: "BD Pacientes", icon: Search },
+      { key: "dashboard-nutricion", label: "Dashboard", icon: BarChart3 },
+      { key: "configuracion", label: "Configuración", icon: Settings },
+      { key: "ayuda", label: "Ayuda", icon: HelpCircle }
+    ]
+  },
+  fonoaudiologo: {
+    name: "Fonoaudiólogo",
+    icon: Ear,
+    color: "emerald",
+    mainSections: [
+      { key: "consultas-asignadas", label: "Consultas Asignadas", icon: Calendar },
+      { key: "consultas-realizadas", label: "Consultas Realizadas", icon: CheckCircle },
+      { key: "educacion-salud", label: "Educación en Salud", icon: FileText },
+      { key: "bitacora", label: "Bitácora", icon: Activity }
+    ],
+    sidebarSections: [
+      { key: "bd-pacientes", label: "BD Pacientes", icon: Search },
+      { key: "dashboard-fonoaudiologia", label: "Dashboard", icon: BarChart3 },
+      { key: "configuracion", label: "Configuración", icon: Settings },
+      { key: "ayuda", label: "Ayuda", icon: HelpCircle }
+    ]
+  },
+  odontologo: {
+    name: "Odontólogo",
+    icon: Smile,
+    color: "emerald",
+    mainSections: [
+      { key: "consultas-asignadas", label: "Consultas Asignadas", icon: Calendar },
+      { key: "consultas-realizadas", label: "Consultas Realizadas", icon: CheckCircle },
+      { key: "educacion-salud", label: "Educación en Salud", icon: FileText },
+      { key: "bitacora", label: "Bitácora", icon: Activity }
+    ],
+    sidebarSections: [
+      { key: "bd-pacientes", label: "BD Pacientes", icon: Search },
+      { key: "dashboard-odontologia", label: "Dashboard", icon: BarChart3 },
+      { key: "configuracion", label: "Configuración", icon: Settings },
+      { key: "ayuda", label: "Ayuda", icon: HelpCircle }
+    ]
+  },
+  enfermero_jefe: {
+    name: "Enfermero Jefe",
+    icon: Shield,
+    color: "emerald",
+    mainSections: [
+      { key: "crear-familia", label: "Crear Familia", icon: Users },
+      { key: "caracterizaciones", label: "Caracterizaciones", icon: FileText },
+      { key: "planes-cuidado", label: "Planes de Cuidado", icon: Activity },
+      { key: "consultas-asignadas", label: "Consultas", icon: Calendar },
+      { key: "bitacora", label: "Bitácora", icon: Activity }
+    ],
+    sidebarSections: [
+      { key: "bd-pacientes", label: "BD Pacientes", icon: Search },
+      { key: "dashboard-enfermeria", label: "Dashboard", icon: BarChart3 },
+      { key: "configuracion", label: "Configuración", icon: Settings },
+      { key: "ayuda", label: "Ayuda", icon: HelpCircle }
+    ]
+  },
+  auxiliar_enfermeria: {
+    name: "Auxiliar de Enfermería",
+    icon: UserCheck,
+    color: "emerald",
+    mainSections: [
+      { key: "crear-familia", label: "Crear Familia", icon: Users },
+      { key: "caracterizaciones", label: "Caracterizaciones", icon: FileText },
+      { key: "planes-cuidado", label: "Planes de Cuidado", icon: Heart },
+      { key: "bitacora", label: "Bitácora", icon: Activity }
+    ],
+    sidebarSections: [
+      { key: "bd-pacientes", label: "BD Pacientes", icon: Search },
+      { key: "dashboard-auxiliar", label: "Dashboard", icon: BarChart3 },
+      { key: "configuracion", label: "Configuración", icon: Settings },
+      { key: "ayuda", label: "Ayuda", icon: HelpCircle }
+    ]
+  },
+  administrativo: {
+    name: "Administrativo",
+    icon: Briefcase,
+    color: "emerald",
+    mainSections: [
+      { key: "gestion-citas", label: "Gestión de Citas", icon: CalendarIcon },
+      { key: "reportes-admin", label: "Reportes", icon: BarChart3 },
+      { key: "validacion-registros", label: "Validación", icon: FileCheck },
+      { key: "bitacora", label: "Bitácora", icon: Activity }
+    ],
+    sidebarSections: [
+      { key: "bd-pacientes", label: "BD Pacientes", icon: Search },
+      { key: "dashboard-admin", label: "Dashboard", icon: TrendingUp },
+      { key: "configuracion", label: "Configuración", icon: Settings },
+      { key: "ayuda", label: "Ayuda", icon: HelpCircle }
+    ]
+  },
+  ente_salud_publica: {
+    name: "Ente de Salud Pública",
+    icon: Globe,
+    color: "emerald",
+    mainSections: [
+      { key: "dashboard-epidemio", label: "Dashboard Epidemiológico", icon: TrendingUp },
+      { key: "reportes-publicos", label: "Reportes", icon: BarChart3 },
+      { key: "alertas-epidemio", label: "Alertas", icon: AlertCircle },
+      { key: "supervision-coberturas", label: "Supervisión", icon: Target }
+    ],
+    sidebarSections: [
+      { key: "bd-pacientes-agregada", label: "BD Agregada", icon: Search },
+      { key: "panel-nacional", label: "Panel Nacional", icon: Globe },
+      { key: "configuracion", label: "Configuración", icon: Settings },
+      { key: "ayuda", label: "Ayuda", icon: HelpCircle }
+    ]
+  }
+};
+
+// Hook para detectar el tipo de dispositivo
+const useDeviceType = () => {
+  const [deviceType, setDeviceType] = useState(() => {
+    const width = window.innerWidth;
+    if (width < 768) return 'mobile';
+    if (width < 1024) return 'tablet';
+    return 'desktop';
+  });
+  
+  React.useEffect(() => {
+    const handleResize = () => {
+      const width = window.innerWidth;
+      if (width < 768) setDeviceType('mobile');
+      else if (width < 1024) setDeviceType('tablet');
+      else setDeviceType('desktop');
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+  
+  return deviceType;
+};
+
+// Componentes base responsivos
+const ResponsiveCard = ({ children, className = "" }: any) => (
+  <div className={`bg-white rounded-2xl shadow-sm border border-stone-200 p-4 md:p-6 ${className}`}>
+    {children}
+  </div>
+);
+
+const ResponsiveField = ({ label, children, required = false, hint }: any) => (
+  <div className="space-y-2">
+    <label className="block text-sm font-medium text-stone-700">
+      {label} {required && <span className="text-red-500">*</span>}
+    </label>
+    {children}
+    {hint && <p className="text-xs text-stone-500">{hint}</p>}
+  </div>
+);
+
+const ResponsiveInput = (props: any) => (
+  <input
+    {...props}
+    className={`w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base ${props.className || ""}`}
+  />
+);
+
+const ResponsiveSelect = ({ options = [], ...rest }: any) => (
+  <select
+    {...rest}
+    className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base bg-white"
+  >
+    {options.map((o: any) => (
+      <option key={o.value} value={o.value}>
+        {o.label}
+      </option>
+    ))}
+  </select>
+);
+
+const ResponsiveBadge = ({ children, tone = "stone" }: any) => {
+  const colors = {
+    green: "border-emerald-200 text-emerald-700 bg-emerald-50",
+    amber: "border-amber-200 text-amber-700 bg-amber-50",
+    rose: "border-rose-200 text-rose-700 bg-rose-50",
+    blue: "border-blue-200 text-blue-700 bg-blue-50",
+    stone: "border-stone-200 text-stone-700 bg-stone-50"
+  };
+  
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs border font-medium ${colors[tone] || colors.stone}`}>
+      {children}
+    </span>
+  );
+};
+
+const ResponsiveButton = ({ children, variant = "primary", size = "md", className = "", ...props }: any) => {
+  const variants = {
+    primary: "bg-emerald-600 text-white hover:bg-emerald-700",
+    secondary: "bg-stone-100 text-stone-700 hover:bg-stone-200",
+    outline: "border border-stone-200 text-stone-700 hover:bg-stone-50"
+  };
+  
+  const sizes = {
+    sm: "px-3 py-2 text-sm",
+    md: "px-4 py-2 md:py-3 text-sm md:text-base",
+    lg: "px-6 py-3 md:py-4 text-base md:text-lg"
+  };
+  
+  return (
+    <button
+      {...props}
+      className={`rounded-xl font-medium transition-colors ${variants[variant]} ${sizes[size]} ${className}`}
+    >
+      {children}
+    </button>
+  );
+};
+
+// Componente de navegación móvil
+const MobileNavItem = ({ label, icon: Icon, active, onClick, badge }: any) => (
+  <button
+    onClick={onClick}
+    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-all ${
+      active 
+        ? "bg-emerald-50 text-emerald-700 border border-emerald-200" 
+        : "text-stone-600 hover:bg-stone-50"
+    }`}
+  >
+    <Icon className="w-5 h-5 flex-shrink-0" />
+    <span className="font-medium flex-1 text-sm">{label}</span>
+    {badge && (
+      <span className="bg-red-100 text-red-700 text-xs px-2 py-1 rounded-full min-w-[20px] text-center">
+        {badge}
+      </span>
+    )}
+  </button>
+);
+
+// Vistas principales
+function InicioView({ currentRole, deviceType }: any) {
+  const roleConfig = USER_ROLES[currentRole];
+  const [isOnline, setIsOnline] = useState(false);
+  
+  const kpis = [
+    { label: "Registros hoy", value: 42, icon: FileText },
+    { label: "Consultas", value: 19, icon: Calendar },
+    { label: "Caracterizaciones", value: 12, icon: Users },
+    { label: "Demandas inducidas", value: 7, icon: Target },
+  ];
+
+  return (
+    <div className="space-y-4 md:space-y-6">
+      {/* Estado de conexión */}
+      <ResponsiveCard className="bg-gradient-to-r from-stone-50 to-stone-100">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {isOnline ? <Wifi className="w-4 h-4 text-emerald-600" /> : <WifiOff className="w-4 h-4 text-amber-600" />}
+            <span className="text-sm font-medium">
+              {isOnline ? "En línea" : "Sin conexión"}
+            </span>
+          </div>
+          <ResponsiveBadge tone={isOnline ? "green" : "amber"}>
+            {isOnline ? "Sincronizado" : "3 pendientes"}
+          </ResponsiveBadge>
+        </div>
+      </ResponsiveCard>
+
+      {/* KPIs */}
+      <ResponsiveCard>
+        <h3 className="font-semibold text-stone-900 mb-4">Resumen de actividad</h3>
+        <div className={`grid gap-3 ${
+          deviceType === 'mobile' ? 'grid-cols-2' : 
+          deviceType === 'tablet' ? 'grid-cols-2 md:grid-cols-4' : 
+          'grid-cols-4'
+        }`}>
+          {kpis.map((kpi) => {
+            const Icon = kpi.icon;
+            return (
+              <div key={kpi.label} className="bg-stone-50 rounded-xl p-3 md:p-4 border border-stone-100">
+                <div className="flex items-center gap-2 mb-2">
+                  <Icon className="w-4 h-4 text-emerald-600" />
+                  <div className="text-xs text-stone-500">{kpi.label}</div>
+                </div>
+                <div className="text-xl md:text-2xl font-semibold text-stone-900">{kpi.value}</div>
+              </div>
+            );
+          })}
+        </div>
+      </ResponsiveCard>
+
+      {/* Acciones rápidas */}
+      <ResponsiveCard>
+        <h3 className="font-semibold text-stone-900 mb-4">Acciones rápidas</h3>
+        <div className={`grid gap-3 ${
+          deviceType === 'mobile' ? 'grid-cols-2' : 
+          deviceType === 'tablet' ? 'grid-cols-3' : 
+          'grid-cols-6'
+        }`}>
+          {roleConfig.mainSections.slice(0, 6).map((section) => {
+            const Icon = section.icon;
+            return (
+              <ResponsiveButton
+                key={section.key}
+                variant="outline"
+                className="flex flex-col items-center gap-2 h-16 md:h-20"
+              >
+                <Icon className="w-4 h-4 md:w-5 md:h-5" />
+                <span className="text-xs">{section.label.split(' ')[0]}</span>
+              </ResponsiveButton>
+            );
+          })}
+        </div>
+      </ResponsiveCard>
+
+      {/* Próximas citas - Solo en desktop y tablet */}
+      {deviceType !== 'mobile' && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+          <ResponsiveCard>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-stone-900">Próximas citas</h3>
+              <ResponsiveBadge tone="blue">3</ResponsiveBadge>
+            </div>
+            <div className="space-y-3">
+              {[
+                { nombre: "María González", hora: "09:30", tipo: "Control" },
+                { nombre: "Carlos Rodríguez", hora: "10:15", tipo: "Primera vez" },
+                { nombre: "Ana Martínez", hora: "11:00", tipo: "Seguimiento" }
+              ].map((cita, i) => (
+                <div key={i} className="flex items-center justify-between p-3 bg-stone-50 rounded-lg">
+                  <div>
+                    <div className="font-medium text-stone-900 text-sm">{cita.nombre}</div>
+                    <div className="text-xs text-stone-500">{cita.tipo}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-medium text-stone-900 text-sm">{cita.hora}</div>
+                    <ResponsiveBadge tone="green">Confirmada</ResponsiveBadge>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </ResponsiveCard>
+
+          <ResponsiveCard>
+            <h3 className="font-semibold text-stone-900 mb-4">Alertas del sistema</h3>
+            <div className="space-y-3">
+              <div className="flex items-start gap-3 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <div className="text-sm font-medium text-amber-800">Campos incompletos</div>
+                  <div className="text-xs text-amber-600">HC: antecedentes familiares</div>
+                </div>
+              </div>
+              <div className="flex items-start gap-3 p-3 bg-emerald-50 rounded-lg border border-emerald-200">
+                <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <div className="text-sm font-medium text-emerald-800">Exportación exitosa</div>
+                  <div className="text-xs text-emerald-600">Última exportación RIPS</div>
+                </div>
+              </div>
+            </div>
+          </ResponsiveCard>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ConsultasAsignadasView({ deviceType }: any) {
+  const [selectedPatient, setSelectedPatient] = useState(null);
+  
+  const pacientes = [
+    { id: 1, nombre: "María González", documento: "1030456789", edad: 45, estado: "Pendiente", hora: "09:30", urgente: false },
+    { id: 2, nombre: "Carlos Rodríguez", documento: "1030567890", edad: 32, estado: "En curso", hora: "10:15", urgente: true },
+    { id: 3, nombre: "Ana Martínez", documento: "1030678901", edad: 28, estado: "Completada", hora: "11:00", urgente: false }
+  ];
+
+  if (selectedPatient) {
+    return <HistoriaClinicaView patient={selectedPatient} onBack={() => setSelectedPatient(null)} deviceType={deviceType} />;
+  }
+
+  return (
+    <div className="space-y-4 md:space-y-6">
+      <ResponsiveCard>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-stone-900">Pacientes Asignados</h3>
+          <div className="flex gap-2">
+            <button className="p-2 rounded-lg border border-stone-200 hover:bg-stone-50">
+              <Filter className="w-4 h-4" />
+            </button>
+            <button className="p-2 rounded-lg border border-stone-200 hover:bg-stone-50">
+              <Search className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+        
+        <div className="space-y-3">
+          {pacientes.map((paciente) => (
+            <button
+              key={paciente.id}
+              onClick={() => setSelectedPatient(paciente)}
+              className="w-full p-4 bg-stone-50 rounded-xl text-left hover:bg-stone-100 transition-colors"
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <h4 className="font-medium text-stone-900">{paciente.nombre}</h4>
+                    {paciente.urgente && <ResponsiveBadge tone="rose">Urgente</ResponsiveBadge>}
+                  </div>
+                  <p className="text-sm text-stone-500 mb-2">{paciente.documento} • {paciente.edad} años</p>
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-stone-400" />
+                    <span className="text-sm text-stone-600">{paciente.hora}</span>
+                    <ResponsiveBadge tone={
+                      paciente.estado === 'Completada' ? 'green' :
+                      paciente.estado === 'En curso' ? 'blue' : 'amber'
+                    }>
+                      {paciente.estado}
+                    </ResponsiveBadge>
+                  </div>
+                </div>
+                <ChevronRight className="w-5 h-5 text-stone-400" />
+              </div>
+            </button>
+          ))}
+        </div>
+      </ResponsiveCard>
+    </div>
+  );
+}
+
+function HistoriaClinicaView({ patient, onBack, deviceType }: any) {
+  const [activeTab, setActiveTab] = useState("consulta");
+  
+  return (
+    <div className="space-y-4 md:space-y-6">
+      {/* Header del paciente */}
+      <ResponsiveCard>
+        <div className="flex items-center gap-3 mb-4">
+          <button onClick={onBack} className="p-2 -ml-2 rounded-lg hover:bg-stone-100">
+            <ChevronRight className="w-5 h-5 rotate-180" />
+          </button>
+          <div className="flex-1">
+            <h3 className="font-semibold text-stone-900">{patient.nombre}</h3>
+            <p className="text-sm text-stone-500">{patient.documento} • {patient.edad} años</p>
+          </div>
+          <ResponsiveBadge tone={patient.urgente ? "rose" : "blue"}>
+            {patient.urgente ? "Urgente" : "Regular"}
+          </ResponsiveBadge>
+        </div>
+        
+        {/* Tabs */}
+        <div className="flex gap-1 bg-stone-100 rounded-lg p-1">
+          {[
+            { key: "consulta", label: "Consulta" },
+            { key: "receta", label: "Receta" },
+            { key: "examenes", label: "Exámenes" }
+          ].map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+                activeTab === tab.key
+                  ? "bg-white text-stone-900 shadow-sm"
+                  : "text-stone-600"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </ResponsiveCard>
+
+      {/* Contenido según tab activo */}
+      {activeTab === "consulta" && <ConsultaFormView deviceType={deviceType} />}
+      {activeTab === "receta" && <RecetaFormView deviceType={deviceType} />}
+      {activeTab === "examenes" && <ExamenesFormView deviceType={deviceType} />}
+    </div>
+  );
+}
+
+function ConsultaFormView({ deviceType }: any) {
+  return (
+    <ResponsiveCard>
+      <h4 className="font-semibold text-stone-900 mb-4">Historia Clínica</h4>
+      <div className="space-y-4">
+        <ResponsiveField label="Motivo de consulta" required>
+          <ResponsiveInput placeholder="Describe el motivo principal..." />
+        </ResponsiveField>
+        
+        <ResponsiveField label="Enfermedad actual">
+          <textarea
+            className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none"
+            rows={3}
+            placeholder="Inicio, duración, características..."
+          />
+        </ResponsiveField>
+        
+        <div className={`grid gap-3 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-2'}`}>
+          <ResponsiveField label="Presión arterial">
+            <ResponsiveInput placeholder="120/80" />
+          </ResponsiveField>
+          <ResponsiveField label="Frecuencia cardíaca">
+            <ResponsiveInput placeholder="72 lpm" />
+          </ResponsiveField>
+        </div>
+        
+        <ResponsiveField label="Examen físico">
+          <textarea
+            className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none"
+            rows={3}
+            placeholder="Hallazgos relevantes..."
+          />
+        </ResponsiveField>
+        
+        <ResponsiveField label="Diagnóstico principal (CIE-10)" required>
+          <ResponsiveInput placeholder="Ej: J00 - Rinofaringitis aguda" />
+        </ResponsiveField>
+        
+        <ResponsiveField label="Plan de tratamiento">
+          <textarea
+            className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none"
+            rows={3}
+            placeholder="Tratamiento, educación, controles..."
+          />
+        </ResponsiveField>
+        
+        {/* Botones de acción */}
+        {deviceType === 'mobile' && (
+          <div className="flex gap-3 pt-4">
+            <ResponsiveButton variant="outline" className="flex-1 flex items-center justify-center gap-2">
+              <Camera className="w-4 h-4" />
+              Foto
+            </ResponsiveButton>
+            <ResponsiveButton variant="outline" className="flex-1 flex items-center justify-center gap-2">
+              <Mic className="w-4 h-4" />
+              Audio
+            </ResponsiveButton>
+          </div>
+        )}
+        
+        <div className={`flex gap-3 ${deviceType === 'mobile' ? 'flex-col' : 'flex-row'}`}>
+          <ResponsiveButton variant="secondary" className={`${deviceType === 'mobile' ? 'w-full' : 'flex-1'} flex items-center justify-center gap-2`}>
+            <Save className="w-4 h-4" />
+            Guardar
+          </ResponsiveButton>
+          <ResponsiveButton className={`${deviceType === 'mobile' ? 'w-full' : 'flex-1'} flex items-center justify-center gap-2`}>
+            <Send className="w-4 h-4" />
+            Finalizar
+          </ResponsiveButton>
+        </div>
+      </div>
+    </ResponsiveCard>
+  );
+}
+
+function RecetaFormView({ deviceType }: any) {
+  const [medicamentos, setMedicamentos] = useState([
+    { id: 1, nombre: "Paracetamol 500mg", dosis: "1 tableta", frecuencia: "Cada 8 horas", dias: "5" }
+  ]);
+  
+  return (
+    <ResponsiveCard>
+      <div className="flex items-center justify-between mb-4">
+        <h4 className="font-semibold text-stone-900">Recetario Digital</h4>
+        <button className="p-2 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100">
+          <Plus className="w-4 h-4" />
+        </button>
+      </div>
+      
+      <div className="space-y-3 mb-4">
+        {medicamentos.map((med) => (
+          <div key={med.id} className="p-3 bg-stone-50 rounded-lg">
+            <div className="font-medium text-stone-900">{med.nombre}</div>
+            <div className="text-sm text-stone-600 mt-1">
+              {med.dosis} • {med.frecuencia} • {med.dias} días
+            </div>
+          </div>
+        ))}
+      </div>
+      
+      <div className="space-y-4">
+        <ResponsiveField label="Agregar medicamento">
+          <ResponsiveInput placeholder="Nombre del medicamento..." />
+        </ResponsiveField>
+        
+        <div className={`grid gap-3 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-2'}`}>
+          <ResponsiveField label="Dosis">
+            <ResponsiveInput placeholder="1 tableta" />
+          </ResponsiveField>
+          <ResponsiveField label="Frecuencia">
+            <ResponsiveInput placeholder="Cada 8h" />
+          </ResponsiveField>
+        </div>
+        
+        <ResponsiveButton className="w-full">Agregar a receta</ResponsiveButton>
+        
+        <div className={`flex gap-3 ${deviceType === 'mobile' ? 'flex-col' : 'flex-row'}`}>
+          <ResponsiveButton variant="secondary" className="flex-1">
+            Vista previa
+          </ResponsiveButton>
+          <ResponsiveButton className="flex-1">
+            Imprimir
+          </ResponsiveButton>
+        </div>
+      </div>
+    </ResponsiveCard>
+  );
+}
+
+function ExamenesFormView({ deviceType }: any) {
+  return (
+    <ResponsiveCard>
+      <h4 className="font-semibold text-stone-900 mb-4">Órdenes de Exámenes</h4>
+      <div className="space-y-4">
+        <ResponsiveField label="Tipo de examen" required>
+          <ResponsiveSelect options={[
+            { value: "", label: "Seleccionar examen" },
+            { value: "hemograma", label: "Cuadro hemático completo" },
+            { value: "glicemia", label: "Glicemia en ayunas" },
+            { value: "orina", label: "Parcial de orina" },
+            { value: "radiografia", label: "Radiografía de tórax" }
+          ]} />
+        </ResponsiveField>
+        
+        <ResponsiveField label="Justificación clínica" required>
+          <textarea
+            className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none"
+            rows={3}
+            placeholder="Justificación médica para el examen..."
+          />
+        </ResponsiveField>
+        
+        <ResponsiveField label="Prioridad">
+          <ResponsiveSelect options={[
+            { value: "rutinaria", label: "Rutinaria" },
+            { value: "urgente", label: "Urgente" },
+            { value: "prioritaria", label: "Prioritaria" }
+          ]} />
+        </ResponsiveField>
+        
+        <div className={`flex gap-3 ${deviceType === 'mobile' ? 'flex-col' : 'flex-row'}`}>
+          <ResponsiveButton variant="secondary" className="flex-1">
+            Guardar orden
+          </ResponsiveButton>
+          <ResponsiveButton className="flex-1">
+            Generar e imprimir
+          </ResponsiveButton>
+        </div>
+      </div>
+    </ResponsiveCard>
+  );
+}
+
+function BDPacientesView({ deviceType }: any) {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [searchType, setSearchType] = useState("documento");
+  
+  return (
+    <div className="space-y-4 md:space-y-6">
+      <ResponsiveCard>
+        <h3 className="font-semibold text-stone-900 mb-4">Buscar Pacientes</h3>
+        
+        <div className="space-y-4">
+          <ResponsiveField label="Tipo de búsqueda">
+            <ResponsiveSelect 
+              value={searchType}
+              onChange={(e) => setSearchType(e.target.value)}
+              options={[
+                { value: "documento", label: "Por documento" },
+                { value: "nombre", label: "Por nombre" },
+                { value: "familia", label: "Por familia" }
+              ]} 
+            />
+          </ResponsiveField>
+          
+          <ResponsiveField label="Término de búsqueda">
+            <ResponsiveInput 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder={
+                searchType === "documento" ? "Número de documento..." :
+                searchType === "nombre" ? "Nombre del paciente..." :
+                "Apellido de familia..."
+              }
+            />
+          </ResponsiveField>
+          
+          <ResponsiveButton className="w-full flex items-center justify-center gap-2">
+            <Search className="w-4 h-4" />
+            Buscar
+          </ResponsiveButton>
+        </div>
+      </ResponsiveCard>
+      
+      {searchTerm && (
+        <ResponsiveCard>
+          <h4 className="font-semibold text-stone-900 mb-3">Resultados</h4>
+          <div className="text-center py-8 text-stone-500">
+            <Search className="w-12 h-12 mx-auto mb-2 text-stone-300" />
+            <p>Ingrese un término de búsqueda</p>
+          </div>
+        </ResponsiveCard>
+      )}
+    </div>
+  );
+}
+
+function CrearFamiliaView({ deviceType }: any) {
+  return (
+    <div className="space-y-4 md:space-y-6">
+      <ResponsiveCard>
+        <h3 className="font-semibold text-stone-900 mb-4">Nueva Familia</h3>
+        
+        <div className="space-y-4">
+          <ResponsiveField label="Jefe de familia" required>
+            <ResponsiveInput placeholder="Nombre completo" />
+          </ResponsiveField>
+          
+          <div className={`grid gap-3 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-2'}`}>
+            <ResponsiveField label="Tipo documento">
+              <ResponsiveSelect options={[
+                { value: "cc", label: "CC" },
+                { value: "ti", label: "TI" },
+                { value: "ce", label: "CE" }
+              ]} />
+            </ResponsiveField>
+            <ResponsiveField label="Número" required>
+              <ResponsiveInput placeholder="Documento" />
+            </ResponsiveField>
+          </div>
+          
+          <ResponsiveField label="Dirección" required>
+            <ResponsiveInput placeholder="Dirección completa" />
+          </ResponsiveField>
+          
+          <div className={`grid gap-3 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-2'}`}>
+            <ResponsiveField label="Teléfono">
+              <ResponsiveInput type="tel" placeholder="Teléfono" />
+            </ResponsiveField>
+            <ResponsiveField label="Integrantes">
+              <ResponsiveInput type="number" placeholder="Cantidad" />
+            </ResponsiveField>
+          </div>
+          
+          <ResponsiveField label="Territorio/Barrio">
+            <ResponsiveSelect options={[
+              { value: "", label: "Seleccionar" },
+              { value: "centro", label: "Centro" },
+              { value: "norte", label: "Norte" },
+              { value: "sur", label: "Sur" }
+            ]} />
+          </ResponsiveField>
+          
+          <div className={`flex gap-3 pt-4 ${deviceType === 'mobile' ? 'flex-col' : 'flex-row'}`}>
+            <ResponsiveButton variant="secondary" className="flex-1">
+              Guardar
+            </ResponsiveButton>
+            <ResponsiveButton className="flex-1">
+              Crear Caracterización
+            </ResponsiveButton>
+          </div>
+        </div>
+      </ResponsiveCard>
+    </div>
+  );
+}
+
+// Componente principal
+export default function App() {
+  const { user, isAuthenticated, isLoading, login, logout } = useAuth();
+  const [currentRole, setCurrentRole] = useState("medico");
+  const [currentPage, setCurrentPage] = useState("inicio");
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const deviceType = useDeviceType();
+  
+  // Si no está autenticado, mostrar login
+  if (!isAuthenticated) {
+    return <LoginForm onLogin={login} isLoading={isLoading} />;
+  }
+
+  // Usar el rol del usuario autenticado
+  const userRole = user?.role || currentRole;
+  const roleConfig = USER_ROLES[userRole as keyof typeof USER_ROLES];
+  const RoleIcon = roleConfig.icon;
+
+  const renderPage = () => {
+    switch (currentPage) {
+      case "inicio":
+        return <InicioView currentRole={userRole} deviceType={deviceType} />;
+      case "crear-familia":
+        return <CrearFamiliaView deviceType={deviceType} />;
+      case "consultas-asignadas":
+      case "terapias-asignadas":
+        return <ConsultasAsignadasView deviceType={deviceType} />;
+      case "bd-pacientes":
+      case "bd-pacientes-agregada":
+        return <BDPacientesView deviceType={deviceType} />;
+      default:
+        return (
+          <ResponsiveCard>
+            <div className="text-center py-12">
+              <div className="text-4xl mb-4">🚧</div>
+              <h3 className="text-lg font-semibold text-stone-900 mb-2">
+                En desarrollo
+              </h3>
+              <p className="text-stone-600 text-sm">
+                Esta sección estará disponible próximamente
+              </p>
+            </div>
+          </ResponsiveCard>
+        );
+    }
+  };
+
+  // Vista móvil
+  if (deviceType === 'mobile') {
+    return (
+      <div className="min-h-screen bg-stone-50">
+        {/* Header móvil */}
+        <header className="sticky top-0 z-50 bg-white border-b border-stone-200">
+          <div className="flex items-center justify-between px-4 py-3">
+            <button
+              onClick={() => setShowMobileMenu(true)}
+              className="p-2 rounded-lg hover:bg-stone-100"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-emerald-100">
+                <RoleIcon className="w-4 h-4 text-emerald-600" />
+              </div>
+              <div>
+                <div className="text-xs text-stone-500">APS</div>
+                <div className="text-sm font-semibold text-stone-900">{roleConfig.name}</div>
+              </div>
+            </div>
+            
+            <UserProfile user={{ name: user?.name || '', role: userRole }} onLogout={logout} />
+          </div>
+        </header>
+
+        {/* Contenido principal */}
+        <main className="px-4 py-4 pb-20">
+          {renderPage()}
+        </main>
+
+        {/* Navegación inferior */}
+        <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-stone-200 px-4 py-2">
+          <div className="flex justify-around">
+            {roleConfig.mainSections.slice(0, 4).map((section) => {
+              const Icon = section.icon;
+              const isActive = currentPage === section.key;
+              return (
+                <button
+                  key={section.key}
+                  onClick={() => setCurrentPage(section.key)}
+                  className={`flex flex-col items-center gap-1 py-2 px-3 rounded-lg transition-colors ${
+                    isActive ? "text-emerald-600 bg-emerald-50" : "text-stone-600"
+                  }`}
+                >
+                  <Icon className="w-5 h-5" />
+                  <span className="text-xs font-medium">{section.label.split(' ')[0]}</span>
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+
+        {/* Menú lateral móvil */}
+        {showMobileMenu && (
+          <div className="fixed inset-0 z-50 bg-black/50" onClick={() => setShowMobileMenu(false)}>
+            <div className="w-80 h-full bg-white" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between p-4 border-b border-stone-200">
+                <h3 className="font-semibold text-stone-900">Menú</h3>
+                <button
+                  onClick={() => setShowMobileMenu(false)}
+                  className="p-2 rounded-lg hover:bg-stone-100"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <div className="p-4 space-y-4">
+                {/* Selector de rol */}
+                <div>
+                  <label className="block text-sm font-medium text-stone-700 mb-2">
+                    Cambiar rol
+                  </label>
+                  <div className="p-3 bg-stone-100 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <RoleIcon className="w-4 h-4 text-emerald-600" />
+                      <span className="text-sm font-medium text-stone-700">{roleConfig.name}</span>
+                    </div>
+                    <div className="text-xs text-stone-500 mt-1">{user?.name}</div>
+                  </div>
+                </div>
+                
+                {/* Menú principal */}
+                <div>
+                  <h4 className="text-sm font-medium text-stone-700 mb-2">Menú Principal</h4>
+                  <div className="space-y-1">
+                    <MobileNavItem
+                      label="Inicio"
+                      icon={Home}
+                      active={currentPage === "inicio"}
+                      onClick={() => {
+                        setCurrentPage("inicio");
+                        setShowMobileMenu(false);
+                      }}
+                    />
+                    {roleConfig.mainSections.map((section) => (
+                      <MobileNavItem
+                        key={section.key}
+                        label={section.label}
+                        icon={section.icon}
+                        active={currentPage === section.key}
+                        onClick={() => {
+                          setCurrentPage(section.key);
+                          setShowMobileMenu(false);
+                        }}
+                        badge={section.key === "consultas-asignadas" ? "3" : undefined}
+                      />
+                    ))}
+                  </div>
+                </div>
+                
+                {/* Herramientas */}
+                <div>
+                  <h4 className="text-sm font-medium text-stone-700 mb-2">Herramientas</h4>
+                  <div className="space-y-1">
+                    {roleConfig.sidebarSections.map((section) => (
+                      <MobileNavItem
+                        key={section.key}
+                        label={section.label}
+                        icon={section.icon}
+                        active={currentPage === section.key}
+                        onClick={() => {
+                          setCurrentPage(section.key);
+                          setShowMobileMenu(false);
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+                
+                {/* Cerrar sesión */}
+                <div className="pt-4 border-t border-stone-200">
+                  <button
+                    onClick={() => {
+                      logout();
+                      setShowMobileMenu(false);
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left text-red-600 hover:bg-red-50 transition-colors"
+                  >
+                    <LogOut className="w-5 h-5" />
+                    <span className="font-medium text-sm">Cerrar Sesión</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Vista desktop y tablet
+  return (
+    <div className="min-h-screen bg-stone-50">
+      {/* Header */}
+      <header className="sticky top-0 z-10 bg-white/80 backdrop-blur border-b border-stone-100">
+        <div className="max-w-7xl mx-auto px-4 lg:px-6 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-emerald-600 flex items-center justify-center">
+              <RoleIcon className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <div className="text-sm text-stone-500">Programa APS</div>
+              <div className="text-base font-semibold text-stone-900">Plataforma de Registro Clínico</div>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            {/* Selector de rol */}
+            <div className="flex items-center gap-2 px-3 py-2 bg-stone-100 rounded-lg">
+              <RoleIcon className="w-4 h-4 text-emerald-600" />
+              <span className="text-sm font-medium text-stone-700">{roleConfig.name}</span>
+            </div>
+            <ResponsiveBadge tone="amber">Offline</ResponsiveBadge>
+            <ResponsiveButton size="sm">Sincronizar</ResponsiveButton>
+            <UserProfile user={{ name: user?.name || '', role: userRole }} onLogout={logout} />
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-4 lg:px-6 py-6 grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6">
+        {/* Sidebar */}
+        <aside className="bg-white rounded-2xl border border-stone-100 p-4 h-fit">
+          <div className="space-y-1">
+            <button
+              onClick={() => setCurrentPage("inicio")}
+              className={`w-full flex items-center gap-3 px-4 py-2 rounded-xl text-left transition ${
+                currentPage === "inicio" ? "bg-emerald-50 text-emerald-700" : "text-stone-600 hover:bg-stone-50"
+              }`}
+            >
+              <Home className="w-5 h-5" />
+              <span className="font-medium">Inicio</span>
+            </button>
+            
+            {/* Secciones principales */}
+            <div className="pt-4">
+              <h4 className="text-xs font-medium text-stone-500 uppercase tracking-wider mb-2 px-4">
+                Menú Principal
+              </h4>
+              {roleConfig.mainSections.map((section) => {
+                const Icon = section.icon;
+                return (
+                  <button
+                    key={section.key}
+                    onClick={() => setCurrentPage(section.key)}
+                    className={`w-full flex items-center gap-3 px-4 py-2 rounded-xl text-left transition ${
+                      currentPage === section.key ? "bg-emerald-50 text-emerald-700" : "text-stone-600 hover:bg-stone-50"
+                    }`}
+                  >
+                    <Icon className="w-5 h-5" />
+                    <span className="font-medium">{section.label}</span>
+                    {section.key === "consultas-asignadas" && (
+                      <ResponsiveBadge tone="blue">3</ResponsiveBadge>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            
+            {/* Herramientas */}
+            <div className="pt-4">
+              <h4 className="text-xs font-medium text-stone-500 uppercase tracking-wider mb-2 px-4">
+                Herramientas
+              </h4>
+              {roleConfig.sidebarSections.map((section) => {
+                const Icon = section.icon;
+                return (
+                  <button
+                    key={section.key}
+                    onClick={() => setCurrentPage(section.key)}
+                    className={`w-full flex items-center gap-3 px-4 py-2 rounded-xl text-left transition ${
+                      currentPage === section.key ? "bg-emerald-50 text-emerald-700" : "text-stone-600 hover:bg-stone-50"
+                    }`}
+                  >
+                    <Icon className="w-5 h-5" />
+                    <span className="font-medium">{section.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </aside>
+
+        {/* Contenido principal */}
+        <section className="space-y-6">
+          <ProtectedRoute requiredRole={userRole}>
+            {renderPage()}
+          </ProtectedRoute>
+        </section>
+      </main>
+    </div>
+  );
+}
