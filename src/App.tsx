@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import React__default, { useEffect } from "react";
 import { useAuth } from "./hooks/useAuth";
 import { LoginForm } from "./components/LoginForm";
 import { ProtectedRoute } from "./components/ProtectedRoute";
@@ -57,6 +58,7 @@ import {
   Globe,
   LogOut
 } from "lucide-react";
+import { AuthService } from "./services/authService";
 
 // Configuración completa de todos los roles de usuario
 export const USER_ROLES = {
@@ -66,6 +68,7 @@ export const USER_ROLES = {
     color: "emerald",
     mainSections: [
       { key: "crear-familia", label: "Crear Familia", icon: Users },
+      { key: "familias", label: "Familias", icon: Users },
       { key: "consultas-asignadas", label: "Consultas Asignadas", icon: Calendar },
       { key: "consultas-realizadas", label: "Consultas Realizadas", icon: CheckCircle },
       { key: "bitacora", label: "Bitácora", icon: Activity }
@@ -485,9 +488,244 @@ function InicioView({ currentRole, deviceType }: any) {
   );
 }
 
+function FamiliasView({ deviceType }: any) {
+  const [familias, setFamilias] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterMunicipio, setFilterMunicipio] = useState("");
+
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const data = await AuthService.getFamilias();
+        if (isMounted) setFamilias(Array.isArray(data) ? data : []);
+      } catch (e: any) {
+        if (isMounted) setError(e?.message || 'Error cargando familias');
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    })();
+    return () => { isMounted = false; };
+  }, []);
+
+  return (
+    <div className="space-y-4 md:space-y-6">
+      <ResponsiveCard>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-stone-900">Familias</h3>
+          <div className="flex gap-2">
+            <button className="p-2 rounded-lg border border-stone-200 hover:bg-stone-50">
+              <Filter className="w-4 h-4" />
+            </button>
+            <button className="p-2 rounded-lg border border-stone-200 hover:bg-stone-50">
+              <Search className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {isLoading && (
+          <div className="text-sm text-stone-500">Cargando familias...</div>
+        )}
+        {error && (
+          <div className="text-sm text-red-600">{error}</div>
+        )}
+
+        {!isLoading && !error && (
+          <div className="space-y-3">
+            <div className={`grid gap-3 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-3'}`}>
+              <ResponsiveField label="Buscar por apellido">
+                <ResponsiveInput
+                  value={searchTerm}
+                  onChange={(e: any) => setSearchTerm(e.target.value)}
+                  placeholder="Ej: García"
+                />
+              </ResponsiveField>
+              <ResponsiveField label="Filtrar por municipio">
+                <ResponsiveInput
+                  value={filterMunicipio}
+                  onChange={(e: any) => setFilterMunicipio(e.target.value)}
+                  placeholder="Ej: Cali"
+                />
+              </ResponsiveField>
+            </div>
+            {familias.length === 0 && (
+              <div className="text-sm text-stone-500">No hay familias registradas.</div>
+            )}
+            {familias
+              .filter((f: any) =>
+                (!searchTerm || (f.apellido_principal || '').toLowerCase().includes(searchTerm.toLowerCase())) &&
+                (!filterMunicipio || (f.municipio || '').toLowerCase().includes(filterMunicipio.toLowerCase()))
+              )
+              .map((fam: any) => (
+              <button
+                key={fam.familia_id}
+                onClick={() => {
+                  // Señal al contenedor principal mediante evento custom
+                  const ev: any = new CustomEvent('openFamiliaDetalle', { detail: fam });
+                  window.dispatchEvent(ev);
+                }}
+                className="w-full p-4 bg-stone-50 rounded-xl text-left hover:bg-stone-100 transition-colors"
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h4 className="font-medium text-stone-900">{fam.apellido_principal}</h4>
+                      {typeof fam.integrantes_count === 'number' && (
+                        <ResponsiveBadge tone="blue">{fam.integrantes_count}</ResponsiveBadge>
+                      )}
+                    </div>
+                    <p className="text-sm text-stone-500 mb-2">
+                      {fam.direccion} • {fam.barrio_vereda || fam.municipio}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-stone-400" />
+                      <span className="text-sm text-stone-600">{fam.municipio}</span>
+                      {fam.telefono_contacto && (
+                        <>
+                          <span className="text-stone-300">•</span>
+                          <Phone className="w-4 h-4 text-stone-400" />
+                          <span className="text-sm text-stone-600">{fam.telefono_contacto}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-stone-400" />
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </ResponsiveCard>
+    </div>
+  );
+}
+
+// Vista: Detalle de Familia
+function DetalleFamiliaView({ familia, onBack }: any) {
+  const [pacientes, setPacientes] = useState<any[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState<any>({
+    tipo_documento: 'CC',
+    numero_documento: '',
+    primer_nombre: '',
+    segundo_nombre: '',
+    primer_apellido: '',
+    segundo_apellido: '',
+    fecha_nacimiento: '',
+    genero: 'M',
+    telefono: '',
+    email: ''
+  });
+
+  const loadPacientes = async () => {
+    const data = await AuthService.getPacientesByFamilia(familia.familia_id);
+    setPacientes(data);
+  };
+
+  useEffect(() => { loadPacientes(); }, [familia?.familia_id]);
+
+  const handleCreate = async () => {
+    await AuthService.crearPaciente({
+      familia_id: familia.familia_id,
+      tipo_documento: form.tipo_documento,
+      numero_documento: form.numero_documento,
+      primer_nombre: form.primer_nombre,
+      segundo_nombre: form.segundo_nombre || null,
+      primer_apellido: form.primer_apellido,
+      segundo_apellido: form.segundo_apellido || null,
+      fecha_nacimiento: form.fecha_nacimiento || null,
+      genero: form.genero || null,
+      telefono: form.telefono || null,
+      email: form.email || null
+    });
+    setShowForm(false);
+    await loadPacientes();
+  };
+
+  return (
+    <div className="space-y-4 md:space-y-6">
+      <ResponsiveCard>
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold text-stone-900">Familia {familia.apellido_principal}</h3>
+            <div className="text-sm text-stone-600">{familia.direccion} • {familia.municipio}</div>
+          </div>
+          <div className="flex gap-3">
+            <ResponsiveButton variant="secondary" onClick={onBack}>Volver</ResponsiveButton>
+            <ResponsiveButton onClick={() => setShowForm(true)}>Agregar Paciente</ResponsiveButton>
+          </div>
+        </div>
+      </ResponsiveCard>
+
+      <ResponsiveCard>
+        <h4 className="font-semibold text-stone-900 mb-3">Integrantes</h4>
+        {pacientes.length === 0 ? (
+          <div className="text-sm text-stone-500">No hay pacientes en esta familia.</div>
+        ) : (
+          <div className="space-y-2">
+            {pacientes.map((p: any) => (
+              <div key={p.paciente_id} className="p-3 bg-stone-50 rounded-lg flex items-center justify-between">
+                <div>
+                  <div className="font-medium text-stone-900 text-sm">{p.primer_nombre} {p.segundo_nombre} {p.primer_apellido} {p.segundo_apellido}</div>
+                  <div className="text-xs text-stone-500">{p.tipo_documento} {p.numero_documento}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </ResponsiveCard>
+
+      {showForm && (
+        <ResponsiveCard>
+          <h4 className="font-semibold text-stone-900 mb-3">Nuevo Paciente</h4>
+          <div className={`grid gap-3 ${'grid-cols-1 md:grid-cols-2'}`}>
+            <ResponsiveField label="Tipo documento">
+              <ResponsiveSelect value={form.tipo_documento} onChange={(e: any) => setForm({ ...form, tipo_documento: e.target.value })}
+                options={[{value:'CC',label:'CC'},{value:'TI',label:'TI'},{value:'CE',label:'CE'}]} />
+            </ResponsiveField>
+            <ResponsiveField label="Número documento">
+              <ResponsiveInput value={form.numero_documento} onChange={(e: any) => setForm({ ...form, numero_documento: e.target.value })} />
+            </ResponsiveField>
+            <ResponsiveField label="Primer nombre">
+              <ResponsiveInput value={form.primer_nombre} onChange={(e: any) => setForm({ ...form, primer_nombre: e.target.value })} />
+            </ResponsiveField>
+            <ResponsiveField label="Segundo nombre">
+              <ResponsiveInput value={form.segundo_nombre} onChange={(e: any) => setForm({ ...form, segundo_nombre: e.target.value })} />
+            </ResponsiveField>
+            <ResponsiveField label="Primer apellido">
+              <ResponsiveInput value={form.primer_apellido} onChange={(e: any) => setForm({ ...form, primer_apellido: e.target.value })} />
+            </ResponsiveField>
+            <ResponsiveField label="Segundo apellido">
+              <ResponsiveInput value={form.segundo_apellido} onChange={(e: any) => setForm({ ...form, segundo_apellido: e.target.value })} />
+            </ResponsiveField>
+            <ResponsiveField label="Fecha nacimiento">
+              <ResponsiveInput type="date" value={form.fecha_nacimiento} onChange={(e: any) => setForm({ ...form, fecha_nacimiento: e.target.value })} />
+            </ResponsiveField>
+            <ResponsiveField label="Género">
+              <ResponsiveSelect value={form.genero} onChange={(e: any) => setForm({ ...form, genero: e.target.value })}
+                options={[{value:'M',label:'Masculino'},{value:'F',label:'Femenino'}]} />
+            </ResponsiveField>
+            <ResponsiveField label="Teléfono">
+              <ResponsiveInput value={form.telefono} onChange={(e: any) => setForm({ ...form, telefono: e.target.value })} />
+            </ResponsiveField>
+            <ResponsiveField label="Email">
+              <ResponsiveInput value={form.email} onChange={(e: any) => setForm({ ...form, email: e.target.value })} />
+            </ResponsiveField>
+          </div>
+          <div className="flex gap-3 pt-4">
+            <ResponsiveButton variant="secondary" onClick={() => setShowForm(false)}>Cancelar</ResponsiveButton>
+            <ResponsiveButton onClick={handleCreate}>Guardar Paciente</ResponsiveButton>
+          </div>
+        </ResponsiveCard>
+      )}
+    </div>
+  );
+}
+
 function ConsultasAsignadasView({ deviceType }: any) {
   const [selectedPatient, setSelectedPatient] = useState(null);
-  
   const pacientes = [
     { id: 1, nombre: "María González", documento: "1030456789", edad: 45, estado: "Pendiente", hora: "09:30", urgente: false },
     { id: 2, nombre: "Carlos Rodríguez", documento: "1030567890", edad: 32, estado: "En curso", hora: "10:15", urgente: true },
@@ -512,7 +750,7 @@ function ConsultasAsignadasView({ deviceType }: any) {
             </button>
           </div>
         </div>
-        
+
         <div className="space-y-3">
           {pacientes.map((paciente) => (
             <button
@@ -826,6 +1064,42 @@ function BDPacientesView({ deviceType }: any) {
 }
 
 function CrearFamiliaView({ deviceType }: any) {
+  const [form, setForm] = useState({
+    apellido_principal: '',
+    direccion: '',
+    barrio_vereda: '',
+    municipio: '',
+    telefono_contacto: ''
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const user = AuthService.getCurrentUser();
+
+  const handleChange = (field: string) => (e: any) => {
+    setForm({ ...form, [field]: e.target.value });
+  };
+
+  const handleSubmit = async () => {
+    try {
+      setIsSubmitting(true);
+      setSubmitError(null);
+      await AuthService.crearFamilia({
+        apellido_principal: form.apellido_principal,
+        direccion: form.direccion,
+        barrio_vereda: form.barrio_vereda || null,
+        municipio: form.municipio,
+        telefono_contacto: form.telefono_contacto || null,
+        creado_por_uid: Number(user?.id)
+      });
+      setForm({ apellido_principal: '', direccion: '', barrio_vereda: '', municipio: '', telefono_contacto: '' });
+      alert('Familia creada exitosamente');
+    } catch (e: any) {
+      setSubmitError(e?.message || 'Error al guardar la familia');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <div className="space-y-4 md:space-y-6">
       <ResponsiveCard>
@@ -833,47 +1107,34 @@ function CrearFamiliaView({ deviceType }: any) {
         
         <div className="space-y-4">
           <ResponsiveField label="Jefe de familia" required>
-            <ResponsiveInput placeholder="Nombre completo" />
+            <ResponsiveInput placeholder="Apellido principal" value={form.apellido_principal} onChange={handleChange('apellido_principal')} />
           </ResponsiveField>
           
           <div className={`grid gap-3 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-2'}`}>
-            <ResponsiveField label="Tipo documento">
-              <ResponsiveSelect options={[
-                { value: "cc", label: "CC" },
-                { value: "ti", label: "TI" },
-                { value: "ce", label: "CE" }
-              ]} />
+            <ResponsiveField label="Barrio/Vereda">
+              <ResponsiveInput placeholder="Barrio o vereda" value={form.barrio_vereda} onChange={handleChange('barrio_vereda')} />
             </ResponsiveField>
-            <ResponsiveField label="Número" required>
-              <ResponsiveInput placeholder="Documento" />
+            <ResponsiveField label="Municipio" required>
+              <ResponsiveInput placeholder="Municipio" value={form.municipio} onChange={handleChange('municipio')} />
             </ResponsiveField>
           </div>
           
           <ResponsiveField label="Dirección" required>
-            <ResponsiveInput placeholder="Dirección completa" />
+            <ResponsiveInput placeholder="Dirección completa" value={form.direccion} onChange={handleChange('direccion')} />
           </ResponsiveField>
           
           <div className={`grid gap-3 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-2'}`}>
             <ResponsiveField label="Teléfono">
-              <ResponsiveInput type="tel" placeholder="Teléfono" />
+              <ResponsiveInput type="tel" placeholder="Teléfono" value={form.telefono_contacto} onChange={handleChange('telefono_contacto')} />
             </ResponsiveField>
-            <ResponsiveField label="Integrantes">
-              <ResponsiveInput type="number" placeholder="Cantidad" />
-            </ResponsiveField>
+            <div />
           </div>
           
-          <ResponsiveField label="Territorio/Barrio">
-            <ResponsiveSelect options={[
-              { value: "", label: "Seleccionar" },
-              { value: "centro", label: "Centro" },
-              { value: "norte", label: "Norte" },
-              { value: "sur", label: "Sur" }
-            ]} />
-          </ResponsiveField>
+          {submitError && <div className="text-sm text-red-600">{submitError}</div>}
           
           <div className={`flex gap-3 pt-4 ${deviceType === 'mobile' ? 'flex-col' : 'flex-row'}`}>
-            <ResponsiveButton variant="secondary" className="flex-1">
-              Guardar
+            <ResponsiveButton variant="secondary" className="flex-1" onClick={handleSubmit} disabled={isSubmitting}>
+              {isSubmitting ? 'Guardando...' : 'Guardar'}
             </ResponsiveButton>
             <ResponsiveButton className="flex-1">
               Crear Caracterización
@@ -890,8 +1151,19 @@ export default function App() {
   const { user, isAuthenticated, isLoading, login, logout } = useAuth();
   const [currentRole, setCurrentRole] = useState("medico");
   const [currentPage, setCurrentPage] = useState("inicio");
+  const [selectedFamilia, setSelectedFamilia] = useState<any | null>(null);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const deviceType = useDeviceType();
+
+  // Listener para abrir detalle de familia desde tarjetas en FamiliasView
+  useEffect(() => {
+    const handler = (e: any) => {
+      setSelectedFamilia(e.detail);
+      setCurrentPage('familia-detalle');
+    };
+    window.addEventListener('openFamiliaDetalle', handler as any);
+    return () => window.removeEventListener('openFamiliaDetalle', handler as any);
+  }, []);
   
   // Si no está autenticado, mostrar login
   if (!isAuthenticated) {
@@ -909,6 +1181,17 @@ export default function App() {
         return <InicioView currentRole={userRole} deviceType={deviceType} />;
       case "crear-familia":
         return <CrearFamiliaView deviceType={deviceType} />;
+      case "familias":
+        return <FamiliasView deviceType={deviceType} />;
+      case "familia-detalle":
+        return selectedFamilia ? (
+          <DetalleFamiliaView
+            familia={selectedFamilia}
+            onBack={() => setCurrentPage("familias")}
+          />
+        ) : (
+          <ResponsiveCard>Seleccione una familia desde la lista.</ResponsiveCard>
+        );
       case "consultas-asignadas":
       case "terapias-asignadas":
         return <ConsultasAsignadasView deviceType={deviceType} />;
