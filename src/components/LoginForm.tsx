@@ -37,36 +37,36 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLogin, isLoading }) => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-stone-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-bondi-50 via-sinbad-50 to-janna-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Header */}
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+          <div className="w-16 h-16 bg-gradient-to-br from-san-marino to-bondi-blue rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-soft">
             <Lock className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-stone-900 mb-2">
+          <h1 className="text-2xl font-bold text-eden-800 mb-2">
             Plataforma APS
           </h1>
-          <p className="text-stone-600">
+          <p className="text-eden-600">
             Sistema de Registro Clínico
           </p>
         </div>
 
         {/* Formulario */}
-        <div className="bg-white rounded-2xl shadow-lg border border-stone-200 p-8">
+        <div className="bg-white rounded-2xl shadow-medium border border-sinbad-200 p-8">
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Campo Usuario */}
             <div>
-              <label className="block text-sm font-medium text-stone-700 mb-2">
+              <label className="block text-sm font-medium text-eden-700 mb-2">
                 Usuario
               </label>
               <div className="relative">
-                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-stone-400" />
+                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-eden-400" />
                 <input
                   type="text"
                   value={credentials.username}
                   onChange={(e) => handleInputChange('username', e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors"
+                  className="w-full pl-10 pr-4 py-3 border border-sinbad-200 rounded-xl focus:ring-2 focus:ring-san-marino focus:border-san-marino transition-colors"
                   placeholder="Ingrese su usuario"
                   disabled={isLoading}
                 />
@@ -75,23 +75,23 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLogin, isLoading }) => {
 
             {/* Campo Contraseña */}
             <div>
-              <label className="block text-sm font-medium text-stone-700 mb-2">
+              <label className="block text-sm font-medium text-eden-700 mb-2">
                 Contraseña
               </label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-stone-400" />
+                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-eden-400" />
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={credentials.password}
                   onChange={(e) => handleInputChange('password', e.target.value)}
-                  className="w-full pl-10 pr-12 py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors"
+                  className="w-full pl-10 pr-12 py-3 border border-sinbad-200 rounded-xl focus:ring-2 focus:ring-san-marino focus:border-san-marino transition-colors"
                   placeholder="Ingrese su contraseña"
                   disabled={isLoading}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-stone-400 hover:text-stone-600 transition-colors"
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-eden-400 hover:text-san-marino transition-colors"
                   disabled={isLoading}
                 >
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
@@ -101,9 +101,9 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLogin, isLoading }) => {
 
             {/* Error */}
             {error && (
-              <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
-                <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
-                <span className="text-sm text-red-700">{error}</span>
+              <div className="flex items-center gap-2 p-3 bg-eden-50 border border-eden-200 rounded-lg">
+                <AlertCircle className="w-5 h-5 text-eden-600 flex-shrink-0" />
+                <span className="text-sm text-eden-700">{error}</span>
               </div>
             )}
 
@@ -111,7 +111,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLogin, isLoading }) => {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full bg-emerald-600 text-white py-3 px-4 rounded-xl font-medium hover:bg-emerald-700 focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="w-full bg-bondi-blue text-white py-3 px-4 rounded-xl font-medium hover:bg-bondi-600 focus:ring-2 focus:ring-bondi-blue focus:ring-offset-2 transition-all shadow-soft disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {isLoading ? (
                 <>

@@ -52,17 +52,21 @@ export class AuthService {
         id: result.user.id.toString(),
         username: result.user.email,
         role: this.mapRole(result.user.role),
-        name: result.user.name,
-        // Datos adicionales que puedes usar
+        name: result.user.name
+      };
+
+      // Datos adicionales para guardar en sesión (no requeridos por el tipo User)
+      const sessionData = {
+        ...user,
         email: result.user.email,
         team: result.user.team,
         document: result.user.document
-      };
+      } as any;
 
       console.log('Login exitoso:', user);
       
       // Guardar sesión en localStorage
-      localStorage.setItem(this.SESSION_KEY, JSON.stringify(user));
+      localStorage.setItem(this.SESSION_KEY, JSON.stringify(sessionData));
       
       return user;
     } catch (error) {
@@ -71,6 +75,36 @@ export class AuthService {
     }
   }
 
+  static async getPacientesByFamilia(familiaId: number) {
+    const response = await fetch(`${API_URL}/familias/${familiaId}/pacientes`);
+    if (!response.ok) throw new Error('Error obteniendo pacientes');
+    return response.json();
+  }
+
+  static async crearPaciente(data: {
+    familia_id: number;
+    numero_documento: string;
+    tipo_documento: string;
+    primer_nombre: string;
+    segundo_nombre?: string | null;
+    primer_apellido: string;
+    segundo_apellido?: string | null;
+    fecha_nacimiento?: string | null;
+    genero?: string | null;
+    telefono?: string | null;
+    email?: string | null;
+  }) {
+    const response = await fetch(`${API_URL}/pacientes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || 'No se pudo crear el paciente');
+    }
+    return response.json();
+  }
   // Mapear roles de la base de datos a los roles de tu frontend
   private static mapRole(dbRole: string): string {
     const roleMap: { [key: string]: string } = {
@@ -126,6 +160,26 @@ export class AuthService {
       console.error('Error fetching familias:', error);
       throw error;
     }
+  }
+
+  static async crearFamilia(data: {
+    apellido_principal: string;
+    direccion: string;
+    barrio_vereda?: string | null;
+    municipio: string;
+    telefono_contacto?: string | null;
+    creado_por_uid: number;
+  }) {
+    const response = await fetch(`${API_URL}/familias`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || 'No se pudo crear la familia');
+    }
+    return response.json();
   }
 
   static async getUsuariosPorRol(rol: string) {
