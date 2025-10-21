@@ -70,12 +70,30 @@ bash
 cd backend
 npm install
 npm run dev
+<<<<<<< HEAD
 Frontend
 bash
 npm install
 npm run dev
 🔧 Tecnologías
 Frontend: React 18 + TypeScript + Vite + Tailwind CSS
+=======
+```
+
+#### Variables de entorno
+Crea un archivo `.env` en `backend/` con:
+
+```
+ELEVENLABS_API_KEY=tu_api_key_de_elevenlabs
+```
+
+Endpoint TTS: `POST http://localhost:3001/api/tts` con body `{ "texto": "Hola" }` devuelve `audio/mpeg`.
+
+### Speech-to-Text (STT)
+- Endpoint: `POST http://localhost:3001/api/stt`
+- Enviar `multipart/form-data` con el campo `audio` (ej. `audio/webm` del navegador)
+- Respuesta: JSON con `{ text: "..." }`
+>>>>>>> 104f43e (feat(IA): TTS y STT con ElevenLabs + UI médico)
 
 Backend: Node.js + Express + SQLite
 

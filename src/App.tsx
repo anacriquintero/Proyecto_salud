@@ -386,6 +386,14 @@ const MobileNavItem = ({ label, icon: Icon, active, onClick, badge }: any) => (
 function InicioView({ currentRole, deviceType }: any) {
   const roleConfig = USER_ROLES[currentRole];
   const [isOnline, setIsOnline] = useState(false);
+  const [ttsText, setTtsText] = useState("");
+  const [isTtsLoading, setIsTtsLoading] = useState(false);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const audioRef = React.useRef<HTMLAudioElement | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
+  const audioChunksRef = React.useRef<Blob[]>([]);
+  const [transcript, setTranscript] = useState<string>("");
   
   const kpis = [
     { label: "Registros hoy", value: 42, icon: FileText },
@@ -433,6 +441,137 @@ function InicioView({ currentRole, deviceType }: any) {
           })}
         </div>
       </ResponsiveCard>
+
+      {/* Herramienta IA: Texto a voz (Médico) */}
+      {currentRole === 'medico' && (
+        <ResponsiveCard>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-eden-800">Asistente de voz (ElevenLabs)</h3>
+            <ResponsiveBadge tone="info">TTS</ResponsiveBadge>
+          </div>
+          <div className={`grid gap-3 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-6'}`}>
+            <div className={deviceType === 'mobile' ? '' : 'col-span-5'}>
+              <ResponsiveField label="Texto a convertir a voz">
+                <ResponsiveInput
+                  placeholder="Ej: Paciente con dolor torácico de 2 días de evolución..."
+                  value={ttsText}
+                  onChange={(e: any) => setTtsText(e.target.value)}
+                />
+              </ResponsiveField>
+            </div>
+            <div className="flex items-end">
+              <ResponsiveButton
+                onClick={async () => {
+                  if (!ttsText || isTtsLoading) return;
+                  try {
+                    setIsTtsLoading(true);
+                    setAudioUrl(null);
+                    const resp = await fetch('http://localhost:3001/api/tts', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ texto: ttsText })
+                    });
+                    if (!resp.ok) {
+                      const err = await resp.json().catch(() => ({}));
+                      throw new Error(err?.error || 'Error generando voz');
+                    }
+                    const blob = await resp.blob();
+                    const url = URL.createObjectURL(blob);
+                    setAudioUrl(url);
+                    setTimeout(() => {
+                      if (audioRef.current) {
+                        audioRef.current.play().catch(() => {});
+                      }
+                    }, 50);
+                  } catch (e) {
+                    console.error('TTS error:', e);
+                    alert(e instanceof Error ? e.message : 'Error generando voz');
+                  } finally {
+                    setIsTtsLoading(false);
+                  }
+                }}
+                variant="primary"
+                className="w-full"
+                disabled={!ttsText || isTtsLoading}
+              >
+                {isTtsLoading ? 'Generando...' : 'Generar voz'}
+              </ResponsiveButton>
+            </div>
+          </div>
+          {audioUrl && (
+            <div className="mt-3">
+              <audio ref={audioRef} src={audioUrl} controls className="w-full" />
+            </div>
+          )}
+        </ResponsiveCard>
+      )}
+
+      {/* Herramienta IA: Voz a texto (Médico) */}
+      {currentRole === 'medico' && (
+        <ResponsiveCard>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-eden-800">Dictado médico (STT)</h3>
+            <ResponsiveBadge tone="info">STT</ResponsiveBadge>
+          </div>
+          <div className="flex items-center gap-3">
+            <ResponsiveButton
+              variant={isRecording ? 'warning' : 'primary'}
+              onClick={async () => {
+                try {
+                  if (!isRecording) {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    const mr = new MediaRecorder(stream);
+                    audioChunksRef.current = [];
+                    mr.ondataavailable = (e: BlobEvent) => {
+                      if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
+                    };
+                    mr.onstop = async () => {
+                      try {
+                        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                        // Convertir a mp3 puede no ser posible en navegador; ElevenLabs acepta varios formatos.
+                        const form = new FormData();
+                        form.append('audio', blob, 'audio.webm');
+                        const resp = await fetch('http://localhost:3001/api/stt', { method: 'POST', body: form });
+                        if (!resp.ok) {
+                          let msg = 'Error transcribiendo audio';
+                          try {
+                            const err = await resp.json();
+                            msg = `${err?.error || msg}${err?.status ? ` (status ${err.status})` : ''}${err?.details ? `: ${err.details}` : ''}`;
+                          } catch {}
+                          throw new Error(msg);
+                        }
+                        const data = await resp.json();
+                        setTranscript(typeof data?.text === 'string' ? data.text : JSON.stringify(data));
+                      } catch (e) {
+                        console.error('STT error:', e);
+                        alert(e instanceof Error ? e.message : 'Error transcribiendo audio');
+                      }
+                    };
+                    mediaRecorderRef.current = mr;
+                    mr.start();
+                    setIsRecording(true);
+                  } else {
+                    mediaRecorderRef.current?.stop();
+                    setIsRecording(false);
+                  }
+                } catch (e) {
+                  console.error('Mic error:', e);
+                  alert('No se pudo acceder al micrófono');
+                }
+              }}
+            >
+              {isRecording ? 'Detener' : 'Grabar dictado'}
+            </ResponsiveButton>
+          </div>
+          {transcript && (
+            <div className="mt-3">
+              <ResponsiveField label="Transcripción">
+                <textarea className="w-full px-3 py-2 border border-sinbad-300 rounded-xl text-sm" rows={3} value={transcript} onChange={(e) => setTranscript(e.target.value)} />
+              </ResponsiveField>
+            </div>
+          )}
+        </ResponsiveCard>
+      )}
 
       {/* Acciones rápidas */}
       <ResponsiveCard>

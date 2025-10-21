@@ -3,10 +3,18 @@ const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
+const fetch = require('node-fetch');
+const FormData = require('form-data');
+const multer = require('multer');
+require('dotenv').config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+// Servir archivos estáticos desde /public para poder exponer el mp3 si se desea
+app.use(express.static(path.join(__dirname, 'public')));
+const upload = multer({ dest: path.join(__dirname, 'uploads') });
 
 // Conectar a SQLite (usa la ruta correcta de tu BD)
 const dbPath = path.join(__dirname, 'database', 'salud_digital_aps.db');
@@ -740,6 +748,105 @@ app.get('/api/test', (req, res) => {
     message: 'Test endpoint funcionando',
     timestamp: new Date().toISOString()
   });
+});
+
+// ==================== ENDPOINT TTS ELEVENLABS ====================
+// Genera audio a partir de texto usando ElevenLabs y lo devuelve como audio/mpeg
+app.post('/api/tts', async (req, res) => {
+  try {
+    const { texto, voiceId } = req.body || {};
+    if (!texto || typeof texto !== 'string') {
+      return res.status(400).json({ error: 'Falta el texto' });
+    }
+
+    const apiKey = process.env.ELEVENLABS_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'Falta ELEVENLABS_API_KEY en el servidor' });
+    }
+
+    const selectedVoiceId = voiceId || 'EXAVITQu4vr4xnSDxMaL';
+    const url = `https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId}`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'xi-api-key': apiKey,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        text: texto,
+        voice_settings: { stability: 0.7, similarity_boost: 0.8 }
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return res.status(500).json({ error: 'Error ElevenLabs', details: errorText });
+    }
+
+    const audioBuffer = Buffer.from(await response.arrayBuffer());
+
+    // Opción A: devolver el audio directamente como streaming
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Content-Disposition', 'inline; filename="voz.mp3"');
+    return res.send(audioBuffer);
+
+    // Opción B (comentada): guardar a archivo público
+    // const publicDir = path.join(__dirname, 'public');
+    // if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });
+    // const audioPath = path.join(publicDir, 'voz.mp3');
+    // fs.writeFileSync(audioPath, audioBuffer);
+    // return res.json({ audioUrl: '/voz.mp3' });
+  } catch (err) {
+    console.error('TTS error:', err);
+    return res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+// ==================== ENDPOINT STT ELEVENLABS ====================
+// Recibe un archivo de audio (multipart/form-data campo "audio") y devuelve la transcripción
+app.post('/api/stt', upload.single('audio'), async (req, res) => {
+  try {
+    const apiKey = process.env.ELEVENLABS_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'Falta ELEVENLABS_API_KEY en el servidor' });
+    }
+    if (!req.file) {
+      return res.status(400).json({ error: 'Falta archivo de audio' });
+    }
+
+    const inputFilePath = req.file.path;
+    const audioBuffer = fs.readFileSync(inputFilePath);
+    const contentType = (req.file.mimetype || 'audio/webm').split(';')[0];
+
+    // Enviar como multipart/form-data con campo "file" + params del modelo
+    const form = new FormData();
+    form.append('file', audioBuffer, { filename: req.file.originalname || 'audio.webm', contentType });
+    form.append('model_id', 'scribe_v1');
+    form.append('language_code', 'es');
+
+    const sttUrl = 'https://api.elevenlabs.io/v1/speech-to-text';
+    const response = await fetch(sttUrl, {
+      method: 'POST',
+      headers: { 'xi-api-key': apiKey, 'Accept': 'application/json', ...form.getHeaders() },
+      body: form
+    });
+
+    // Limpiar archivo temporal
+    fs.unlink(inputFilePath, () => {});
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => '');
+      return res.status(502).json({ error: 'Error ElevenLabs STT', status: response.status, details: errText });
+    }
+
+    const data = await response.json().catch(() => null);
+    // Respuesta esperada: { text: "..." } u otro formato compatible
+    return res.json(data || { text: '' });
+  } catch (err) {
+    console.error('STT error:', err);
+    return res.status(500).json({ error: 'Error interno del servidor' });
+  }
 });
 
 // Endpoint para verificar usuarios en la BD del servidor
