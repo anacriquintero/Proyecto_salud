@@ -442,8 +442,8 @@ function InicioView({ currentRole, deviceType }: any) {
         </div>
       </ResponsiveCard>
 
-      {/* Herramienta IA: Texto a voz (Médico) */}
-      {currentRole === 'medico' && (
+      {/* Herramienta IA: Texto a voz (Médico / Psicólogo) */}
+      {['medico','psicologo'].includes(currentRole) && (
         <ResponsiveCard>
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold text-eden-800">Asistente de voz (ElevenLabs)</h3>
@@ -506,8 +506,8 @@ function InicioView({ currentRole, deviceType }: any) {
         </ResponsiveCard>
       )}
 
-      {/* Herramienta IA: Voz a texto (Médico) */}
-      {currentRole === 'medico' && (
+      {/* Herramienta IA: Voz a texto (Médico / Psicólogo) */}
+      {['medico','psicologo'].includes(currentRole) && (
         <ResponsiveCard>
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold text-eden-800">Dictado médico (STT)</h3>
