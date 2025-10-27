@@ -245,6 +245,200 @@ app.get('/api/usuarios/rol/:rol', (req, res) => {
   });
 });
 
+
+// ==================== ENDPOINTS DE HC_MEDICINA_GENERAL ====================
+
+// Obtener historia clínica de medicina general
+app.get('/api/hc/medicina/:atencion_id', (req, res) => {
+  const { atencion_id } = req.params;
+  
+  const query = `
+    SELECT 
+      atencion_id, motivo_consulta, enfermedad_actual,
+      antecedentes_personales, antecedentes_familiares,
+      revision_por_sistemas, signos_vitales, habitos_toxicos, 
+      examen_fisico, diagnosticos_cie10, plan_manejo, 
+      recomendaciones, proxima_cita
+    FROM HC_Medicina_General 
+    WHERE atencion_id = ?
+  `;
+  
+  db.get(query, [atencion_id], (err, row) => {
+    if (err) {
+      console.error('Error obteniendo HC Medicina:', err);
+      return res.status(500).json({ error: 'Error del servidor' });
+    }
+    if (!row) {
+      return res.status(404).json({ error: 'Historia clínica no encontrada' });
+    }
+    res.json(row);
+  });
+});
+
+// ==================== ENDPOINT DE LOGIN CON DEPURACIÓN ====================
+
+// Login de usuarios - VERSIÓN CON DEBUG
+app.post('/api/auth/login', (req, res) => {
+  const { email, password } = req.body;
+  
+  console.log('🔐 ============ LOGIN DEBUG START ============');
+  console.log('📧 Email recibido:', email);
+  console.log('🔑 Password recibido:', password);
+  console.log('📏 Longitud password:', password?.length);
+  console.log('🔍 Tipo de password:', typeof password);
+  
+  // Verificar que llegaron los datos
+  if (!email || !password) {
+    console.log('❌ FALTAN DATOS: email o password vacíos');
+    return res.status(400).json({ error: 'Email y contraseña son requeridos' });
+  }
+
+  const query = `
+    SELECT 
+      u.usuario_id, u.nombre_completo, u.email, u.numero_documento,
+      r.nombre_rol, r.rol_id
+    FROM Usuarios u 
+    JOIN Roles r ON u.rol_id = r.rol_id 
+    WHERE u.email = ?
+  `;
+  
+  console.log('🛢️  Ejecutando query en BD para email:', email);
+  
+  db.get(query, [email.trim()], (err, row) => {
+    if (err) {
+      console.error('❌ ERROR EN BASE DE DATOS:', err);
+      return res.status(500).json({ error: 'Error del servidor' });
+    }
+    
+    console.log('📋 RESULTADO DE BD:', row ? 'USUARIO ENCONTRADO' : 'USUARIO NO ENCONTRADO');
+    
+    if (!row) {
+      console.log('❌ USUARIO NO EXISTE en la base de datos');
+      console.log('🔍 Buscando todos los usuarios disponibles:');
+      
+      // Debug: mostrar todos los usuarios para ver qué hay
+      db.all('SELECT usuario_id, email, numero_documento FROM Usuarios', [], (err, allUsers) => {
+        if (err) {
+          console.error('Error obteniendo usuarios:', err);
+        } else {
+          console.log('👥 TODOS LOS USUARIOS EN BD:');
+          allUsers.forEach(user => {
+            console.log(`   - ${user.email} (doc: ${user.numero_documento})`);
+          });
+        }
+        return res.status(401).json({ error: 'Email o contraseña incorrectos' });
+      });
+      return;
+    }
+    
+    console.log('✅ USUARIO ENCONTRADO EN BD:');
+    console.log('   ID:', row.usuario_id);
+    console.log('   Nombre:', row.nombre_completo);
+    console.log('   Email:', row.email);
+    console.log('   Documento:', row.numero_documento);
+    console.log('   Rol:', row.nombre_rol);
+    
+    console.log('🔍 COMPARANDO CONTRASEÑAS:');
+    console.log('   Password ingresado:', `"${password}"`);
+    console.log('   Numero documento:', `"${row.numero_documento}"`);
+    console.log('   ¿Son iguales?', password === row.numero_documento);
+    console.log('   Tipos - Password:', typeof password, 'Documento:', typeof row.numero_documento);
+    
+    // Verificar contraseña (comparar con numero_documento)
+    if (password !== row.numero_documento) {
+      console.log('❌ CONTRASEÑA INCORRECTA');
+      console.log('   Se esperaba:', row.numero_documento);
+      console.log('   Se recibió:', password);
+      return res.status(401).json({ error: 'Email o contraseña incorrectos' });
+    }
+    
+    console.log('✅ LOGIN EXITOSO para:', row.nombre_completo);
+    console.log('🔐 ============ LOGIN DEBUG END ============');
+    
+    res.json({ 
+      success: true, 
+      user: {
+        id: row.usuario_id,
+        name: row.nombre_completo,
+        email: row.email,
+        role: row.nombre_rol,
+        roleId: row.rol_id,
+        team: null,
+        document: row.numero_documento
+      }
+    });
+  });
+});
+// Actualizar historia clínica de medicina general
+app.put('/api/hc/medicina/:atencion_id', (req, res) => {
+  const { atencion_id } = req.params;
+  const {
+    motivo_consulta, enfermedad_actual,
+    antecedentes_personales, antecedentes_familiares,
+    revision_por_sistemas, signos_vitales, habitos_toxicos,
+    examen_fisico, diagnosticos_cie10, plan_manejo, 
+    recomendaciones, proxima_cita
+  } = req.body;
+
+  const query = `
+    UPDATE HC_Medicina_General SET
+      motivo_consulta = ?, enfermedad_actual = ?,
+      antecedentes_personales = ?, antecedentes_familiares = ?,
+      revision_por_sistemas = ?, signos_vitales = ?, habitos_toxicos = ?,
+      examen_fisico = ?, diagnosticos_cie10 = ?,
+      plan_manejo = ?, recomendaciones = ?, proxima_cita = ?
+    WHERE atencion_id = ?
+  `;
+
+  const params = [
+    motivo_consulta, enfermedad_actual,
+    antecedentes_personales, antecedentes_familiares,
+    revision_por_sistemas, signos_vitales, habitos_toxicos,
+    examen_fisico, diagnosticos_cie10, plan_manejo, 
+    recomendaciones, proxima_cita, atencion_id
+  ];
+
+  db.run(query, params, function(err) {
+    if (err) {
+      console.error('Error actualizando HC Medicina:', err);
+      return res.status(500).json({ error: 'Error actualizando historia clínica' });
+    }
+    if (this.changes === 0) {
+      return res.status(404).json({ error: 'Historia clínica no encontrada' });
+    }
+    res.json({ 
+      success: true, 
+      message: 'Historia clínica actualizada exitosamente' 
+    });
+  });
+});
+
+// Obtener todas las historias clínicas de medicina de un paciente
+app.get('/api/pacientes/:paciente_id/hc/medicina', (req, res) => {
+  const { paciente_id } = req.params;
+  
+  const query = `
+    SELECT 
+      hc.*,
+      ac.fecha_atencion,
+      ac.usuario_id as profesional_id,
+      u.nombre_completo as profesional_nombre
+    FROM HC_Medicina_General hc
+    JOIN Atenciones_Clinicas ac ON hc.atencion_id = ac.atencion_id
+    JOIN Usuarios u ON ac.usuario_id = u.usuario_id
+    WHERE ac.paciente_id = ?
+    ORDER BY ac.fecha_atencion DESC
+  `;
+  
+  db.all(query, [paciente_id], (err, rows) => {
+    if (err) {
+      console.error('Error obteniendo historias clínicas:', err);
+      return res.status(500).json({ error: 'Error del servidor' });
+    }
+    res.json(rows);
+  });
+});
+
 // ==================== ENDPOINTS DE CARACTERIZACIÓN ====================
 
 // Crear/actualizar caracterización completa de familia
