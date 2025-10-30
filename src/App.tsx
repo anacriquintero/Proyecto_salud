@@ -990,6 +990,8 @@ function DetalleFamiliaView({ familia, onBack, onShowCaracterizacion, onShowPaci
 
 // Vista: Detalle del Paciente
 function DetallePacienteView({ paciente, familia, caracterizacion, onBack }: any) {
+  const { user } = useAuth();
+  const isAuxiliar = (user?.role === 'auxiliar_enfermeria');
   const [pacienteData, setPacienteData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
@@ -1204,32 +1206,30 @@ function DetallePacienteView({ paciente, familia, caracterizacion, onBack }: any
           >
             Seguimiento
           </ResponsiveButton>
-          <ResponsiveButton 
-            variant="admin" 
-            size="sm"
-            onClick={() => {
-              // Navegar a vista de planes de cuidado
-              const ev: any = new CustomEvent('openPlanesCuidado', { 
-                detail: { paciente, familia } 
-              });
-              window.dispatchEvent(ev);
-            }}
-          >
-            Plan de Cuidado
-          </ResponsiveButton>
-          <ResponsiveButton 
-            variant="admin" 
-            size="sm"
-            onClick={() => {
-              // Navegar a vista de demandas inducidas
-              const ev: any = new CustomEvent('openDemandasInducidas', { 
-                detail: { paciente, familia } 
-              });
-              window.dispatchEvent(ev);
-            }}
-          >
-            Demandas Inducidas
-          </ResponsiveButton>
+          {isAuxiliar && (
+            <>
+              <ResponsiveButton 
+                variant="admin" 
+                size="sm"
+                onClick={() => {
+                  const ev: any = new CustomEvent('openPlanesCuidado', { detail: { paciente, familia } });
+                  window.dispatchEvent(ev);
+                }}
+              >
+                Crear Plan de Cuidado
+              </ResponsiveButton>
+              <ResponsiveButton 
+                variant="admin" 
+                size="sm"
+                onClick={() => {
+                  const ev: any = new CustomEvent('openDemandasInducidas', { detail: { paciente, familia } });
+                  window.dispatchEvent(ev);
+                }}
+              >
+                Crear Demanda Inducida
+              </ResponsiveButton>
+            </>
+          )}
         </div>
       </ResponsiveCard>
     </div>
@@ -1475,22 +1475,116 @@ function HistoriaClinicaView({ patient, onBack, deviceType }: any) {
 }
 
 function ConsultaFormView({ deviceType }: any) {
+  const [motivo, setMotivo] = useState('');
+  const [enfermedadActual, setEnfermedadActual] = useState('');
+  const [examenFisico, setExamenFisico] = useState('');
+  const [diagnostico, setDiagnostico] = useState('');
+  const [planManejo, setPlanManejo] = useState('');
+  const [antecedentesPersonales, setAntecedentesPersonales] = useState<any>({
+    patologicos: '', inmunologicos: '', ginecologicos: '', farmacologicos: '',
+    quirurgicos: '', hospitalizaciones: '', alergicos: '', toxicologicos: '', traumatologicos: ''
+  });
+  const [antecedentesFamiliares, setAntecedentesFamiliares] = useState('');
+  const sistemas = [
+    'Cardiovascular','Digestivo','Renal','Nervioso','Organos de los sentidos','Mental','Musculoesqueletico'
+  ];
+  const [revisionPorSistemasSeleccion, setRevisionPorSistemasSeleccion] = useState<string[]>([]);
+  const [revisionPorSistemasHallazgos, setRevisionPorSistemasHallazgos] = useState<Record<string,string>>({});
+
+  const toggleSistema = (s: string) => {
+    setRevisionPorSistemasSeleccion(prev => (
+      prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]
+    ));
+  };
+
+  const cargarPerfilNormal = () => {
+    setRevisionPorSistemasSeleccion(sistemas);
+    const normal: Record<string,string> = {};
+    sistemas.forEach(s => { normal[s] = 'Normal'; });
+    setRevisionPorSistemasHallazgos(normal);
+    setAntecedentesPersonales({
+      patologicos: 'Niega', inmunologicos: 'Esquema al día', ginecologicos: 'Sin alteraciones',
+      farmacologicos: 'Niega consumo crónico', quirurgicos: 'Niega', hospitalizaciones: 'Niega',
+      alergicos: 'Niega', toxicologicos: 'Niega', traumatologicos: 'Niega'
+    });
+  };
+
+  const handleGuardar = async () => {
+    try {
+      const payload = {
+        motivo_consulta: motivo,
+        enfermedad_actual: enfermedadActual,
+        antecedentes_personales: JSON.stringify(antecedentesPersonales),
+        antecedentes_familiares: antecedentesFamiliares,
+        revision_por_sistemas: JSON.stringify({ sistemas: revisionPorSistemasSeleccion, hallazgos: revisionPorSistemasHallazgos }),
+        signos_vitales: null,
+        examen_fisico: examenFisico,
+        diagnosticos_cie10: diagnostico,
+        plan_manejo: planManejo,
+        recomendaciones: null,
+        proxima_cita: null
+      };
+      await AuthService.updateHCMedicina(1, payload);
+      alert('Historia clínica guardada');
+    } catch (e) {
+      console.error(e);
+      alert('Error guardando historia clínica');
+    }
+  };
+
   return (
     <ResponsiveCard>
       <h4 className="font-semibold text-stone-900 mb-4">Historia Clínica</h4>
       <div className="space-y-4">
         <ResponsiveField label="Motivo de consulta" required>
-          <ResponsiveInput placeholder="Describe el motivo principal..." />
+          <ResponsiveInput value={motivo} onChange={(e: any) => setMotivo(e.target.value)} placeholder="Describe el motivo principal..." />
         </ResponsiveField>
-        
+
+        {/* Nuevos bloques después de Motivo de Consulta */}
+        <ResponsiveCard>
+          <div className="flex items-center justify-between mb-3">
+            <h5 className="font-medium text-stone-900">Revisión por Sistemas</h5>
+            <ResponsiveButton size="sm" variant="secondary" onClick={cargarPerfilNormal}>Cargar Perfil Normal</ResponsiveButton>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {sistemas.map((s) => (
+              <div key={s} className="p-3 bg-stone-50 rounded-lg border border-stone-200">
+                <label className="flex items-center gap-2 text-sm mb-2">
+                  <input type="checkbox" className="rounded border-stone-300" checked={revisionPorSistemasSeleccion.includes(s)} onChange={() => toggleSistema(s)} />
+                  <span>{s}</span>
+                </label>
+                {revisionPorSistemasSeleccion.includes(s) && (
+                  <input
+                    className="w-full px-3 py-2 border border-stone-300 rounded-xl text-sm"
+                    placeholder="Hallazgos..."
+                    value={revisionPorSistemasHallazgos[s] || ''}
+                    onChange={(e) => setRevisionPorSistemasHallazgos(prev => ({ ...prev, [s]: e.target.value }))}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        </ResponsiveCard>
+
+        <ResponsiveCard>
+          <h5 className="font-medium text-stone-900 mb-3">Antecedentes personales</h5>
+          <div className={`grid gap-3 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-2'}`}>
+            {Object.keys(antecedentesPersonales).map((k) => (
+              <ResponsiveField key={k} label={k.charAt(0).toUpperCase() + k.slice(1)}>
+                <ResponsiveInput value={antecedentesPersonales[k]} onChange={(e: any) => setAntecedentesPersonales((p: any) => ({ ...p, [k]: e.target.value }))} />
+              </ResponsiveField>
+            ))}
+          </div>
+        </ResponsiveCard>
+
+        <ResponsiveField label="Antecedentes familiares">
+          <textarea className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none" rows={3} value={antecedentesFamiliares} onChange={(e) => setAntecedentesFamiliares(e.target.value)} />
+        </ResponsiveField>
+
         <ResponsiveField label="Enfermedad actual">
-          <textarea
-            className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none"
-            rows={3}
-            placeholder="Inicio, duración, características..."
-          />
+          <textarea className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none" rows={3} placeholder="Inicio, duración, características..." value={enfermedadActual} onChange={(e) => setEnfermedadActual(e.target.value)} />
         </ResponsiveField>
-        
+
         <div className={`grid gap-3 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-2'}`}>
           <ResponsiveField label="Presión arterial">
             <ResponsiveInput placeholder="120/80" />
@@ -1499,43 +1593,21 @@ function ConsultaFormView({ deviceType }: any) {
             <ResponsiveInput placeholder="72 lpm" />
           </ResponsiveField>
         </div>
-        
+
         <ResponsiveField label="Examen físico">
-          <textarea
-            className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none"
-            rows={3}
-            placeholder="Hallazgos relevantes..."
-          />
+          <textarea className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none" rows={3} placeholder="Hallazgos relevantes..." value={examenFisico} onChange={(e) => setExamenFisico(e.target.value)} />
         </ResponsiveField>
-        
+
         <ResponsiveField label="Diagnóstico principal (CIE-10)" required>
-          <ResponsiveInput placeholder="Ej: J00 - Rinofaringitis aguda" />
+          <ResponsiveInput placeholder="Ej: J00 - Rinofaringitis aguda" value={diagnostico} onChange={(e: any) => setDiagnostico(e.target.value)} />
         </ResponsiveField>
-        
+
         <ResponsiveField label="Plan de tratamiento">
-          <textarea
-            className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none"
-            rows={3}
-            placeholder="Tratamiento, educación, controles..."
-          />
+          <textarea className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none" rows={3} placeholder="Tratamiento, educación, controles..." value={planManejo} onChange={(e) => setPlanManejo(e.target.value)} />
         </ResponsiveField>
-        
-        {/* Botones de acción */}
-        {deviceType === 'mobile' && (
-          <div className="flex gap-3 pt-4">
-            <ResponsiveButton variant="outline" className="flex-1 flex items-center justify-center gap-2">
-              <Camera className="w-4 h-4" />
-              Foto
-            </ResponsiveButton>
-            <ResponsiveButton variant="outline" className="flex-1 flex items-center justify-center gap-2">
-              <Mic className="w-4 h-4" />
-              Audio
-            </ResponsiveButton>
-          </div>
-        )}
-        
+
         <div className={`flex gap-3 ${deviceType === 'mobile' ? 'flex-col' : 'flex-row'}`}>
-          <ResponsiveButton variant="secondary" className={`${deviceType === 'mobile' ? 'w-full' : 'flex-1'} flex items-center justify-center gap-2`}>
+          <ResponsiveButton variant="secondary" onClick={handleGuardar} className={`${deviceType === 'mobile' ? 'w-full' : 'flex-1'} flex items-center justify-center gap-2`}>
             <Save className="w-4 h-4" />
             Guardar
           </ResponsiveButton>
@@ -2187,6 +2259,8 @@ function FormularioCaracterizacionView({ familia, caracterizacionExistente, onSa
 
 // Vista: Plan de Cuidado Familiar
 function PlanCuidadoView({ paciente, familia, onBack }: any) {
+  const { user } = useAuth();
+  const isAuxiliar = (user?.role === 'auxiliar_enfermeria');
   const [planes, setPlanes] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -2269,9 +2343,11 @@ function PlanCuidadoView({ paciente, familia, onBack }: any) {
             <ResponsiveButton variant="secondary" onClick={onBack}>
               Volver
             </ResponsiveButton>
-            <ResponsiveButton onClick={() => setShowForm(true)}>
-              Nuevo Plan
-            </ResponsiveButton>
+            {isAuxiliar && (
+              <ResponsiveButton onClick={() => setShowForm(true)}>
+                Nuevo Plan
+              </ResponsiveButton>
+            )}
           </div>
         </div>
       </ResponsiveCard>
@@ -2458,6 +2534,8 @@ function PlanCuidadoView({ paciente, familia, onBack }: any) {
 
 // Vista: Demandas Inducidas
 function DemandasInducidasView({ paciente, familia, onBack }: any) {
+  const { user } = useAuth();
+  const isAuxiliar = (user?.role === 'auxiliar_enfermeria');
   const [demandas, setDemandas] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -2497,7 +2575,7 @@ function DemandasInducidasView({ paciente, familia, onBack }: any) {
       const newDemanda = {
         ...form,
         paciente_id: paciente.paciente_id,
-        solicitado_por_uid: 1 // TODO: Reemplazar con el UID del usuario logueado
+        solicitado_por_uid: Number(user?.id) || 1
       };
       await AuthService.crearDemandaInducida(newDemanda);
       setShowForm(false);
@@ -2542,9 +2620,11 @@ function DemandasInducidasView({ paciente, familia, onBack }: any) {
             <ResponsiveButton variant="secondary" onClick={onBack}>
               Volver
             </ResponsiveButton>
-            <ResponsiveButton onClick={() => setShowForm(true)}>
-              Crear Demanda
-            </ResponsiveButton>
+            {isAuxiliar && (
+              <ResponsiveButton onClick={() => setShowForm(true)}>
+                Crear Demanda
+              </ResponsiveButton>
+            )}
           </div>
         </div>
       </ResponsiveCard>
@@ -2791,7 +2871,7 @@ export default function App() {
 
   // Usar el rol del usuario autenticado
   const userRole = user?.role || currentRole;
-  const roleConfig = USER_ROLES[userRole as keyof typeof USER_ROLES];
+  const roleConfig = USER_ROLES[userRole as keyof typeof USER_ROLES] || USER_ROLES['medico'];
   const RoleIcon = roleConfig.icon;
 
   const renderPage = () => {

@@ -107,21 +107,32 @@ export class AuthService {
   }
   // Mapear roles de la base de datos a los roles de tu frontend
   private static mapRole(dbRole: string): string {
+    // Normalizar eliminando acentos y usando minúsculas para evitar
+    // discrepancias por capitalización o tildes provenientes de la BD
+    const normalize = (s: string) =>
+      (s || '')
+        .normalize('NFD')
+        .replace(/\p{Diacritic}+/gu, '')
+        .toLowerCase()
+        .trim();
+
+    const key = normalize(dbRole);
+
     const roleMap: { [key: string]: string } = {
-      'Médico': 'medico',
-      'Psicólogo': 'psicologo',
-      'Fisioterapeuta': 'fisioterapeuta',
-      'Nutricionista': 'nutricionista',
-      'Fonoaudiólogo': 'fonoaudiologo',
-      'Odontólogo': 'odontologo',
-      'Enfermero Jefe': 'enfermero_jefe',
-      'Auxiliar de enfermería': 'auxiliar_enfermeria',
-      'Administrativo': 'administrativo',
-      'Ente de Salud Pública': 'ente_salud_publica',
-      'Administrador': 'administrador'
+      'medico': 'medico',
+      'psicologo': 'psicologo',
+      'fisioterapeuta': 'fisioterapeuta',
+      'nutricionista': 'nutricionista',
+      'fonoaudiologo': 'fonoaudiologo',
+      'odontologo': 'odontologo',
+      'enfermero jefe': 'enfermero_jefe',
+      'auxiliar de enfermeria': 'auxiliar_enfermeria',
+      'administrativo': 'administrativo',
+      'ente de salud publica': 'ente_salud_publica',
+      'administrador': 'administrador'
     };
-    
-    return roleMap[dbRole] || dbRole.toLowerCase();
+
+    return roleMap[key] || key;
   }
 
   static logout(): void {
@@ -305,6 +316,20 @@ export class AuthService {
       console.error('Error en getDemandasInducidasPaciente:', error);
       throw error;
     }
+  }
+
+  // ==================== MÉTODOS HC MEDICINA ====================
+  static async updateHCMedicina(atencionId: number, data: any) {
+    const response = await fetch(`${API_URL}/hc/medicina/${atencionId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || 'Error actualizando historia clínica');
+    }
+    return response.json();
   }
 
   static async crearDemandaInducida(data: any) {
