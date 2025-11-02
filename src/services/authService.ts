@@ -21,6 +21,21 @@ export interface LoginResponse {
 export class AuthService {
   private static readonly SESSION_KEY = 'aps_user_session';
 
+  // Método helper para peticiones GET
+  static async get(url: string) {
+    try {
+      const response = await fetch(`${API_URL}${url}`);
+      if (!response.ok) {
+        if (response.status === 404) return [];
+        throw new Error(`Error: ${response.status}`);
+      }
+      return response.json();
+    } catch (error) {
+      console.error('Error en GET:', error);
+      throw error;
+    }
+  }
+
   static async login(credentials: LoginCredentials): Promise<User> {
     try {
       console.log('Intentando login con:', credentials);
@@ -173,6 +188,17 @@ export class AuthService {
     }
   }
 
+  static async getFamiliaPorId(familiaId: number) {
+    try {
+      const response = await fetch(`${API_URL}/familias/${familiaId}`);
+      if (!response.ok) throw new Error('Error obteniendo familia');
+      return response.json();
+    } catch (error) {
+      console.error('Error fetching familia:', error);
+      throw error;
+    }
+  }
+
   static async crearFamilia(data: {
     apellido_principal: string;
     direccion: string;
@@ -319,6 +345,28 @@ export class AuthService {
   }
 
   // ==================== MÉTODOS HC MEDICINA ====================
+  static async crearHCMedicina(data: any) {
+    const response = await fetch(`${API_URL}/hc/medicina`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || 'Error creando historia clínica');
+    }
+    return response.json();
+  }
+
+  static async getHCMedicina(atencionId: number) {
+    const response = await fetch(`${API_URL}/hc/medicina/${atencionId}`);
+    if (!response.ok) {
+      if (response.status === 404) return null;
+      throw new Error('Error obteniendo historia clínica');
+    }
+    return response.json();
+  }
+
   static async updateHCMedicina(atencionId: number, data: any) {
     const response = await fetch(`${API_URL}/hc/medicina/${atencionId}`, {
       method: 'PUT',
@@ -330,6 +378,177 @@ export class AuthService {
       throw new Error(err.error || 'Error actualizando historia clínica');
     }
     return response.json();
+  }
+
+  static async getHCCompletadas(usuarioId: number, desde?: string, hasta?: string) {
+    try {
+      let url = `${API_URL}/usuarios/${usuarioId}/hc-completadas`;
+      const params = new URLSearchParams();
+      if (desde) params.append('desde', desde);
+      if (hasta) params.append('hasta', hasta);
+      if (params.toString()) url += '?' + params.toString();
+      
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Error obteniendo HC completadas');
+      return response.json();
+    } catch (error) {
+      console.error('Error en getHCCompletadas:', error);
+      throw error;
+    }
+  }
+
+  static async completarAtencion(atencionId: number) {
+    try {
+      const response = await fetch(`${API_URL}/atenciones/${atencionId}/completar`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || 'Error completando atención');
+      }
+      return response.json();
+    } catch (error) {
+      console.error('Error en completarAtencion:', error);
+      throw error;
+    }
+  }
+
+  static async getBitacora(usuarioId: number, mes?: number, ano?: number) {
+    try {
+      let url = `${API_URL}/usuarios/${usuarioId}/bitacora`;
+      const params = new URLSearchParams();
+      if (mes) params.append('mes', mes.toString());
+      if (ano) params.append('ano', ano.toString());
+      if (params.toString()) url += '?' + params.toString();
+      
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Error obteniendo bitácora');
+      return response.json();
+    } catch (error) {
+      console.error('Error en getBitacora:', error);
+      throw error;
+    }
+  }
+
+  static async buscarPacientes(termino: string) {
+    try {
+      const response = await fetch(`${API_URL}/pacientes/buscar?q=${encodeURIComponent(termino)}`);
+      if (!response.ok) throw new Error('Error buscando pacientes');
+      return response.json();
+    } catch (error) {
+      console.error('Error en buscarPacientes:', error);
+      throw error;
+    }
+  }
+
+  // ==================== MÉTODOS DE RECETAS ====================
+  static async getRecetasPaciente(pacienteId: number) {
+    try {
+      const response = await fetch(`${API_URL}/pacientes/${pacienteId}/recetas`);
+      if (!response.ok) throw new Error('Error obteniendo recetas');
+      return response.json();
+    } catch (error) {
+      console.error('Error en getRecetasPaciente:', error);
+      throw error;
+    }
+  }
+
+  static async crearReceta(data: any) {
+    try {
+      const response = await fetch(`${API_URL}/recetas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || 'Error creando receta');
+      }
+      return response.json();
+    } catch (error) {
+      console.error('Error en crearReceta:', error);
+      throw error;
+    }
+  }
+
+  static async marcarRecetaImpresion(recetaId: number) {
+    try {
+      const response = await fetch(`${API_URL}/recetas/${recetaId}/imprimir`, {
+        method: 'PUT'
+      });
+      if (!response.ok) throw new Error('Error marcando receta como impresa');
+      return response.json();
+    } catch (error) {
+      console.error('Error en marcarRecetaImpresion:', error);
+      throw error;
+    }
+  }
+
+  // ==================== MÉTODOS DE ÓRDENES DE LABORATORIO ====================
+  static async getOrdenesPaciente(pacienteId: number) {
+    try {
+      const response = await fetch(`${API_URL}/pacientes/${pacienteId}/ordenes-laboratorio`);
+      if (!response.ok) throw new Error('Error obteniendo órdenes de laboratorio');
+      return response.json();
+    } catch (error) {
+      console.error('Error en getOrdenesPaciente:', error);
+      throw error;
+    }
+  }
+
+  static async crearOrdenLaboratorio(data: any) {
+    try {
+      const response = await fetch(`${API_URL}/ordenes-laboratorio`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || 'Error creando orden de laboratorio');
+      }
+      return response.json();
+    } catch (error) {
+      console.error('Error en crearOrdenLaboratorio:', error);
+      throw error;
+    }
+  }
+
+  static async marcarOrdenImpresion(ordenId: number) {
+    try {
+      const response = await fetch(`${API_URL}/ordenes-laboratorio/${ordenId}/imprimir`, {
+        method: 'PUT'
+      });
+      if (!response.ok) throw new Error('Error marcando orden como impresa');
+      return response.json();
+    } catch (error) {
+      console.error('Error en marcarOrdenImpresion:', error);
+      throw error;
+    }
+  }
+
+  // ==================== MÉTODOS DE DASHBOARD ====================
+  static async getResumenActividad(usuarioId: number) {
+    try {
+      const response = await fetch(`${API_URL}/usuarios/${usuarioId}/resumen-actividad`);
+      if (!response.ok) throw new Error('Error obteniendo resumen de actividad');
+      return response.json();
+    } catch (error) {
+      console.error('Error en getResumenActividad:', error);
+      throw error;
+    }
+  }
+
+  static async getDashboardEpidemio() {
+    try {
+      const response = await fetch(`${API_URL}/dashboard/epidemio`);
+      if (!response.ok) throw new Error('Error obteniendo dashboard epidemiológico');
+      return response.json();
+    } catch (error) {
+      console.error('Error en getDashboardEpidemio:', error);
+      throw error;
+    }
   }
 
   static async crearDemandaInducida(data: any) {
