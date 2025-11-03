@@ -383,7 +383,7 @@ const MobileNavItem = ({ label, icon: Icon, active, onClick, badge }: any) => (
 );
 
 // Vistas principales
-function InicioView({ currentRole, deviceType }: any) {
+function InicioView({ currentRole, deviceType, onNavigate }: any) {
   const roleConfig = USER_ROLES[currentRole];
   const [isOnline, setIsOnline] = useState(false);
   const [ttsText, setTtsText] = useState("");
@@ -394,13 +394,37 @@ function InicioView({ currentRole, deviceType }: any) {
   const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
   const audioChunksRef = React.useRef<Blob[]>([]);
   const [transcript, setTranscript] = useState<string>("");
-  
-  const kpis = [
-    { label: "Registros hoy", value: 42, icon: FileText },
-    { label: "Consultas", value: 19, icon: Calendar },
-    { label: "Caracterizaciones", value: 12, icon: Users },
-    { label: "Demandas inducidas", value: 7, icon: Target },
-  ];
+  const [kpis, setKpis] = useState([
+    { label: "Registros hoy", value: 0, icon: FileText },
+    { label: "Consultas", value: 0, icon: Calendar },
+    { label: "Caracterizaciones", value: 0, icon: Users },
+    { label: "Demandas inducidas", value: 0, icon: Target },
+  ]);
+  const [kpisLoading, setKpisLoading] = useState(true);
+
+  useEffect(() => {
+    const loadResumen = async () => {
+      try {
+        setKpisLoading(true);
+        const user = AuthService.getCurrentUser();
+        if (user?.id) {
+          const resumen = await AuthService.getResumenActividad(Number(user.id));
+          setKpis([
+            { label: "Registros hoy", value: resumen.registros_hoy || 0, icon: FileText },
+            { label: "Consultas", value: resumen.consultas || 0, icon: Calendar },
+            { label: "Caracterizaciones", value: resumen.caracterizaciones || 0, icon: Users },
+            { label: "Demandas inducidas", value: resumen.demandas_inducidas || 0, icon: Target },
+          ]);
+        }
+      } catch (error) {
+        console.error('Error cargando resumen de actividad:', error);
+      } finally {
+        setKpisLoading(false);
+      }
+    };
+
+    loadResumen();
+  }, []);
 
   return (
     <div className="space-y-4 md:space-y-6">
@@ -422,24 +446,35 @@ function InicioView({ currentRole, deviceType }: any) {
       {/* KPIs */}
       <ResponsiveCard>
         <h3 className="font-semibold text-eden-800 mb-4">Resumen de actividad</h3>
-        <div className={`grid gap-3 ${
-          deviceType === 'mobile' ? 'grid-cols-2' : 
-          deviceType === 'tablet' ? 'grid-cols-2 md:grid-cols-4' : 
-          'grid-cols-4'
-        }`}>
-          {kpis.map((kpi) => {
-            const Icon = kpi.icon;
-            return (
-              <div key={kpi.label} className="bg-sinbad-100 rounded-xl p-3 md:p-4 border border-sinbad-300 hover:shadow-soft transition-all">
-                <div className="flex items-center gap-2 mb-2">
-                  <Icon className="w-4 h-4 text-eden-600" />
-                  <div className="text-xs text-eden-600">{kpi.label}</div>
-                </div>
-                <div className="text-xl md:text-2xl font-semibold text-eden-800">{kpi.value}</div>
+        {kpisLoading ? (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="bg-sinbad-100 rounded-xl p-3 md:p-4 border border-sinbad-300 animate-pulse">
+                <div className="h-4 bg-sinbad-200 rounded mb-2"></div>
+                <div className="h-8 bg-sinbad-200 rounded"></div>
               </div>
-            );
-          })}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className={`grid gap-3 ${
+            deviceType === 'mobile' ? 'grid-cols-2' : 
+            deviceType === 'tablet' ? 'grid-cols-2 md:grid-cols-4' : 
+            'grid-cols-4'
+          }`}>
+            {kpis.map((kpi) => {
+              const Icon = kpi.icon;
+              return (
+                <div key={kpi.label} className="bg-sinbad-100 rounded-xl p-3 md:p-4 border border-sinbad-300 hover:shadow-soft transition-all">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Icon className="w-4 h-4 text-eden-600" />
+                    <div className="text-xs text-eden-600">{kpi.label}</div>
+                  </div>
+                  <div className="text-xl md:text-2xl font-semibold text-eden-800">{kpi.value}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </ResponsiveCard>
 
       {/* Herramienta IA: Texto a voz (Médico / Psicólogo) */}
@@ -587,6 +622,7 @@ function InicioView({ currentRole, deviceType }: any) {
               <ResponsiveButton
                 key={section.key}
                 variant="secondary"
+                onClick={() => onNavigate && onNavigate(section.key)}
                 className="flex flex-col items-center gap-2 h-16 md:h-20 hover:shadow-soft"
               >
                 <Icon className="w-4 h-4 md:w-5 md:h-5" />
@@ -990,21 +1026,49 @@ function DetalleFamiliaView({ familia, onBack, onShowCaracterizacion, onShowPaci
 
 // Vista: Detalle del Paciente
 function DetallePacienteView({ paciente, familia, caracterizacion, onBack }: any) {
+  const { user } = useAuth();
+  const isAuxiliar = (user?.role === 'auxiliar_enfermeria');
+  const isMedico = (user?.role === 'medico');
+  const canCreatePlanOrDemanda = isAuxiliar || isMedico;
   const [pacienteData, setPacienteData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [caracterizacionData, setCaracterizacionData] = useState<any>(null);
 
   useEffect(() => {
-    // Buscar los datos de caracterización del paciente específico
+    const loadCaracterizacion = async () => {
+      try {
+        // Cargar caracterización de la familia para obtener datos individuales del paciente
+        const data = await AuthService.getCaracterizacionFamilia(familia.familia_id);
+        setCaracterizacionData(data);
+        
+        // Buscar los datos de caracterización del paciente específico
+        if (data?.integrantes) {
+          const pacienteConCaracterizacion = data.integrantes.find(
+            (p: any) => p.paciente_id === paciente.paciente_id
+          );
+          setPacienteData(pacienteConCaracterizacion || paciente);
+        } else {
+          setPacienteData(paciente);
+        }
+      } catch (error) {
+        console.error('Error cargando caracterización:', error);
+        setPacienteData(paciente);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    // Si ya se pasó caracterizacion como prop, usarla
     if (caracterizacion?.integrantes) {
       const pacienteConCaracterizacion = caracterizacion.integrantes.find(
         (p: any) => p.paciente_id === paciente.paciente_id
       );
       setPacienteData(pacienteConCaracterizacion || paciente);
+      setLoading(false);
     } else {
-      setPacienteData(paciente);
+      loadCaracterizacion();
     }
-    setLoading(false);
-  }, [paciente, caracterizacion]);
+  }, [paciente, familia, caracterizacion]);
 
   if (loading) {
     return (
@@ -1171,67 +1235,33 @@ function DetallePacienteView({ paciente, familia, caracterizacion, onBack }: any
       </ResponsiveCard>
 
       {/* Acciones disponibles */}
-      <ResponsiveCard>
-        <h4 className="font-semibold text-stone-900 mb-3">Acciones Disponibles</h4>
-        <div className="flex flex-wrap gap-2">
-          <ResponsiveButton 
-            variant="admin" 
-            size="sm"
-            onClick={() => {
-              // TODO: Implementar navegación a historia clínica
-              alert('Función de Historia Clínica en desarrollo');
-            }}
-          >
-            Historia Clínica
-          </ResponsiveButton>
-          <ResponsiveButton 
-            variant="admin" 
-            size="sm"
-            onClick={() => {
-              // TODO: Implementar navegación a consulta médica
-              alert('Función de Consulta Médica en desarrollo');
-            }}
-          >
-            Consulta Médica
-          </ResponsiveButton>
-          <ResponsiveButton 
-            variant="admin" 
-            size="sm"
-            onClick={() => {
-              // TODO: Implementar navegación a seguimiento
-              alert('Función de Seguimiento en desarrollo');
-            }}
-          >
-            Seguimiento
-          </ResponsiveButton>
-          <ResponsiveButton 
-            variant="admin" 
-            size="sm"
-            onClick={() => {
-              // Navegar a vista de planes de cuidado
-              const ev: any = new CustomEvent('openPlanesCuidado', { 
-                detail: { paciente, familia } 
-              });
-              window.dispatchEvent(ev);
-            }}
-          >
-            Plan de Cuidado
-          </ResponsiveButton>
-          <ResponsiveButton 
-            variant="admin" 
-            size="sm"
-            onClick={() => {
-              // Navegar a vista de demandas inducidas
-              const ev: any = new CustomEvent('openDemandasInducidas', { 
-                detail: { paciente, familia } 
-              });
-              window.dispatchEvent(ev);
-            }}
-          >
-            Demandas Inducidas
-          </ResponsiveButton>
-        </div>
-      </ResponsiveCard>
+      {canCreatePlanOrDemanda && (
+        <ResponsiveCard>
+          <h4 className="font-semibold text-stone-900 mb-3">Acciones Disponibles</h4>
+          <div className="flex flex-wrap gap-2">
+            <ResponsiveButton 
+              variant="primary" 
+              size="sm"
+              onClick={() => {
+                const ev: any = new CustomEvent('openPlanesCuidado', { detail: { paciente, familia } });
+                window.dispatchEvent(ev);
+              }}
+            >
+              Crear Plan de Cuidado Familiar
+            </ResponsiveButton>
+            <ResponsiveButton 
+              variant="primary" 
+              size="sm"
+              onClick={() => {
+                const ev: any = new CustomEvent('openDemandasInducidas', { detail: { paciente, familia } });
+                window.dispatchEvent(ev);
+              }}
+            >
+              Crear Demanda Inducida
+            </ResponsiveButton>
+          </div>
+        </ResponsiveCard>
+      )}
     </div>
   );
 }
@@ -1241,12 +1271,6 @@ function ConsultasAsignadasView({ deviceType }: any) {
   const [demandasInducidas, setDemandasInducidas] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'consultas' | 'demandas'>('demandas');
-  
-  const pacientes = [
-    { id: 1, nombre: "María González", documento: "1030456789", edad: 45, estado: "Pendiente", hora: "09:30", urgente: false },
-    { id: 2, nombre: "Carlos Rodríguez", documento: "1030567890", edad: 32, estado: "En curso", hora: "10:15", urgente: true },
-    { id: 3, nombre: "Ana Martínez", documento: "1030678901", edad: 28, estado: "Completada", hora: "11:00", urgente: false }
-  ];
 
   const loadDemandasInducidas = async () => {
     try {
@@ -1266,6 +1290,34 @@ function ConsultasAsignadasView({ deviceType }: any) {
   useEffect(() => {
     loadDemandasInducidas();
   }, []);
+
+  // Filtrar demandas según la pestaña activa
+  const getDemandasFiltradas = () => {
+    if (activeTab === 'consultas') {
+      // Mostrar solo demandas pendientes o asignadas, ordenadas por fecha
+      return demandasInducidas
+        .filter(d => d.estado === 'Pendiente' || d.estado === 'Asignada')
+        .sort((a, b) => new Date(a.fecha_demanda).getTime() - new Date(b.fecha_demanda).getTime());
+    } else {
+      // Mostrar todas las demandas
+      return demandasInducidas.sort((a, b) => new Date(b.fecha_demanda).getTime() - new Date(a.fecha_demanda).getTime());
+    }
+  };
+
+  const demandasFiltradas = getDemandasFiltradas();
+
+  // Calcular edad desde fecha de nacimiento
+  const calcularEdad = (fechaNacimiento: string) => {
+    if (!fechaNacimiento) return null;
+    const hoy = new Date();
+    const nacimiento = new Date(fechaNacimiento);
+    let edad = hoy.getFullYear() - nacimiento.getFullYear();
+    const mes = hoy.getMonth() - nacimiento.getMonth();
+    if (mes < 0 || (mes === 0 && hoy.getDate() < nacimiento.getDate())) {
+      edad--;
+    }
+    return edad;
+  };
 
   if (selectedPatient) {
     return <HistoriaClinicaView patient={selectedPatient} onBack={() => setSelectedPatient(null)} deviceType={deviceType} />;
@@ -1389,34 +1441,69 @@ function ConsultasAsignadasView({ deviceType }: any) {
           </div>
         ) : (
           <div className="space-y-3">
-            {pacientes.map((paciente) => (
-              <button
-                key={paciente.id}
-                onClick={() => setSelectedPatient(paciente)}
-                className="w-full p-4 bg-stone-50 rounded-xl text-left hover:bg-stone-100 transition-colors"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h4 className="font-medium text-stone-900">{paciente.nombre}</h4>
-                      {paciente.urgente && <ResponsiveBadge tone="rose">Urgente</ResponsiveBadge>}
-                    </div>
-                    <p className="text-sm text-stone-500 mb-2">{paciente.documento} • {paciente.edad} años</p>
-                    <div className="flex items-center gap-2">
-                      <Clock className="w-4 h-4 text-stone-400" />
-                      <span className="text-sm text-stone-600">{paciente.hora}</span>
-                      <ResponsiveBadge tone={
-                        paciente.estado === 'Completada' ? 'health' :
-                        paciente.estado === 'En curso' ? 'admin' : 'warning'
-                      }>
-                        {paciente.estado}
-                      </ResponsiveBadge>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-5 h-5 text-stone-400" />
+            {loading ? (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-bondi-500 mx-auto"></div>
+                <span className="ml-3 text-stone-600">Cargando consultas...</span>
+              </div>
+            ) : demandasFiltradas.length === 0 ? (
+              <div className="text-center py-8">
+                <div className="text-sm text-stone-500 mb-2">No hay consultas programadas</div>
+                <div className="text-xs text-stone-400">
+                  Las consultas aparecerán aquí cuando tengas demandas asignadas pendientes
                 </div>
-              </button>
-            ))}
+              </div>
+            ) : (
+              demandasFiltradas.map((demanda) => {
+                const edad = calcularEdad(demanda.fecha_nacimiento);
+                const fechaDemanda = new Date(demanda.fecha_demanda);
+                const horaFormato = fechaDemanda.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+                const esUrgente = demanda.estado === 'Asignada' && new Date(demanda.fecha_demanda) <= new Date();
+                
+                return (
+                  <button
+                    key={demanda.demanda_id}
+                    onClick={() => setSelectedPatient({
+                      id: demanda.paciente_id,
+                      nombre: `${demanda.primer_nombre || ''} ${demanda.primer_apellido || ''}`.trim(),
+                      documento: demanda.numero_documento,
+                      edad: edad,
+                      demanda: demanda,
+                      fecha_nacimiento: demanda.fecha_nacimiento
+                    })}
+                    className="w-full p-4 bg-stone-50 rounded-xl text-left hover:bg-stone-100 transition-colors"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h4 className="font-medium text-stone-900">
+                            {demanda.primer_nombre || ''} {demanda.primer_apellido || ''}
+                          </h4>
+                          {esUrgente && <ResponsiveBadge tone="rose">Urgente</ResponsiveBadge>}
+                        </div>
+                        <p className="text-sm text-stone-500 mb-2">
+                          {demanda.numero_documento} {edad ? `• ${edad} años` : ''} • Familia {demanda.apellido_principal}
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-4 h-4 text-stone-400" />
+                          <span className="text-sm text-stone-600">{horaFormato}</span>
+                          <span className="text-xs text-stone-400">
+                            {fechaDemanda.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })}
+                          </span>
+                          <ResponsiveBadge tone={
+                            demanda.estado === 'Completada' || demanda.estado === 'Realizada' ? 'health' :
+                            demanda.estado === 'En curso' || demanda.estado === 'Asignada' ? 'admin' : 'warning'
+                          }>
+                            {demanda.estado}
+                          </ResponsiveBadge>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-5 h-5 text-stone-400" />
+                    </div>
+                  </button>
+                );
+              })
+            )}
           </div>
         )}
       </ResponsiveCard>
@@ -1467,30 +1554,249 @@ function HistoriaClinicaView({ patient, onBack, deviceType }: any) {
       </ResponsiveCard>
 
       {/* Contenido según tab activo */}
-      {activeTab === "consulta" && <ConsultaFormView deviceType={deviceType} />}
-      {activeTab === "receta" && <RecetaFormView deviceType={deviceType} />}
-      {activeTab === "examenes" && <ExamenesFormView deviceType={deviceType} />}
+      {activeTab === "consulta" && <ConsultaFormView patient={patient} deviceType={deviceType} />}
+      {activeTab === "receta" && <RecetaFormView patient={patient} deviceType={deviceType} />}
+      {activeTab === "examenes" && <ExamenesFormView patient={patient} deviceType={deviceType} />}
     </div>
   );
 }
 
-function ConsultaFormView({ deviceType }: any) {
+function ConsultaFormView({ patient, deviceType }: any) {
+  const [atencionId, setAtencionId] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [guardando, setGuardando] = useState(false);
+  const [motivo, setMotivo] = useState('');
+  const [enfermedadActual, setEnfermedadActual] = useState('');
+  const [examenFisico, setExamenFisico] = useState('');
+  const [diagnostico, setDiagnostico] = useState('');
+  const [planManejo, setPlanManejo] = useState('');
+  const [antecedentesPersonales, setAntecedentesPersonales] = useState<any>({
+    patologicos: '', inmunologicos: '', ginecologicos: '', farmacologicos: '',
+    quirurgicos: '', hospitalizaciones: '', alergicos: '', toxicologicos: '', traumatologicos: ''
+  });
+  const [antecedentesFamiliares, setAntecedentesFamiliares] = useState('');
+  const sistemas = [
+    'Cardiovascular','Digestivo','Renal','Nervioso','Organos de los sentidos','Mental','Musculoesqueletico'
+  ];
+  const [revisionPorSistemasSeleccion, setRevisionPorSistemasSeleccion] = useState<string[]>([]);
+  const [revisionPorSistemasHallazgos, setRevisionPorSistemasHallazgos] = useState<Record<string,string>>({});
+
+  // Cargar HC existente o crear nueva
+  useEffect(() => {
+    const cargarHC = async () => {
+      if (!patient?.id) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        setLoading(true);
+        const user = AuthService.getCurrentUser();
+        
+        // Buscar la última atención del paciente
+        const hcList = await AuthService.get(`/pacientes/${patient.id}/hc/medicina`);
+        
+        if (hcList && hcList.length > 0) {
+          // Cargar la última HC
+          const ultimaHC = hcList[0];
+          setAtencionId(ultimaHC.atencion_id);
+          
+          // Cargar datos completos
+          const hcCompleta = await AuthService.getHCMedicina(ultimaHC.atencion_id);
+          
+          if (hcCompleta) {
+            setMotivo(hcCompleta.motivo_consulta || '');
+            setEnfermedadActual(hcCompleta.enfermedad_actual || '');
+            setExamenFisico(hcCompleta.examen_fisico || '');
+            setDiagnostico(hcCompleta.diagnosticos_cie10 || '');
+            setPlanManejo(hcCompleta.plan_manejo || '');
+            setAntecedentesFamiliares(hcCompleta.antecedentes_familiares || '');
+            
+            // Procesar antecedentes personales
+            if (hcCompleta.antecedentes_personales) {
+              try {
+                const antPer = typeof hcCompleta.antecedentes_personales === 'string' 
+                  ? JSON.parse(hcCompleta.antecedentes_personales) 
+                  : hcCompleta.antecedentes_personales;
+                setAntecedentesPersonales(antPer);
+              } catch (e) {
+                console.error('Error parseando antecedentes personales:', e);
+              }
+            }
+            
+            // Procesar revisión por sistemas
+            if (hcCompleta.revision_por_sistemas) {
+              try {
+                const revSistemas = typeof hcCompleta.revision_por_sistemas === 'string'
+                  ? JSON.parse(hcCompleta.revision_por_sistemas)
+                  : hcCompleta.revision_por_sistemas;
+                
+                if (revSistemas.sistemas) {
+                  setRevisionPorSistemasSeleccion(revSistemas.sistemas);
+                }
+                if (revSistemas.hallazgos) {
+                  setRevisionPorSistemasHallazgos(revSistemas.hallazgos);
+                }
+              } catch (e) {
+                console.error('Error parseando revisión por sistemas:', e);
+              }
+            }
+          }
+        } else {
+          // No hay HC, se creará una nueva al guardar
+          setAtencionId(null);
+        }
+      } catch (error) {
+        console.error('Error cargando HC:', error);
+        // Si hay error, permitir crear nueva
+        setAtencionId(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    cargarHC();
+  }, [patient?.id]);
+
+  const toggleSistema = (s: string) => {
+    setRevisionPorSistemasSeleccion(prev => (
+      prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]
+    ));
+  };
+
+  const cargarPerfilNormal = () => {
+    setRevisionPorSistemasSeleccion(sistemas);
+    const normal: Record<string,string> = {};
+    sistemas.forEach(s => { normal[s] = 'Normal'; });
+    setRevisionPorSistemasHallazgos(normal);
+    setAntecedentesPersonales({
+      patologicos: 'Niega', inmunologicos: 'Esquema al día', ginecologicos: 'Sin alteraciones',
+      farmacologicos: 'Niega consumo crónico', quirurgicos: 'Niega', hospitalizaciones: 'Niega',
+      alergicos: 'Niega', toxicologicos: 'Niega', traumatologicos: 'Niega'
+    });
+  };
+
+  const handleGuardar = async () => {
+    if (!motivo.trim() || !diagnostico.trim()) {
+      alert('Por favor completa los campos obligatorios: Motivo de consulta y Diagnóstico');
+      return;
+    }
+
+    try {
+      setGuardando(true);
+      const user = AuthService.getCurrentUser();
+      
+      const payload = {
+        motivo_consulta: motivo,
+        enfermedad_actual: enfermedadActual,
+        antecedentes_personales: JSON.stringify(antecedentesPersonales),
+        antecedentes_familiares: antecedentesFamiliares,
+        revision_por_sistemas: JSON.stringify({ sistemas: revisionPorSistemasSeleccion, hallazgos: revisionPorSistemasHallazgos }),
+        signos_vitales: null,
+        examen_fisico: examenFisico,
+        diagnosticos_cie10: diagnostico,
+        plan_manejo: planManejo,
+        recomendaciones: null,
+        proxima_cita: null
+      };
+
+      if (atencionId) {
+        // Actualizar HC existente
+        await AuthService.updateHCMedicina(atencionId, payload);
+        alert('Historia clínica actualizada exitosamente');
+      } else {
+        // Crear nueva atención y HC
+        if (!user?.id || !patient?.id) {
+          throw new Error('Usuario o paciente no disponible');
+        }
+        
+        const resultado = await AuthService.crearHCMedicina({
+          paciente_id: patient.id,
+          usuario_id: user.id,
+          fecha_atencion: new Date().toISOString().split('T')[0],
+          ...payload
+        });
+        
+        setAtencionId(resultado.atencion_id);
+        alert('Nueva atención creada exitosamente');
+      }
+    } catch (e: any) {
+      console.error('Error guardando:', e);
+      alert(`Error: ${e.message || 'Error guardando historia clínica'}`);
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <ResponsiveCard>
+        <div className="text-center py-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-bondi-500 mx-auto"></div>
+          <span className="ml-3 text-stone-600">Cargando historia clínica...</span>
+        </div>
+      </ResponsiveCard>
+    );
+  }
+
   return (
     <ResponsiveCard>
-      <h4 className="font-semibold text-stone-900 mb-4">Historia Clínica</h4>
+      <div className="flex items-center justify-between mb-4">
+        <h4 className="font-semibold text-stone-900">Historia Clínica</h4>
+        {atencionId && (
+          <ResponsiveBadge tone="admin">Atención #{atencionId}</ResponsiveBadge>
+        )}
+      </div>
       <div className="space-y-4">
         <ResponsiveField label="Motivo de consulta" required>
-          <ResponsiveInput placeholder="Describe el motivo principal..." />
+          <ResponsiveInput value={motivo} onChange={(e: any) => setMotivo(e.target.value)} placeholder="Describe el motivo principal..." />
         </ResponsiveField>
-        
+
+        {/* Nuevos bloques después de Motivo de Consulta */}
+        <ResponsiveCard>
+          <div className="flex items-center justify-between mb-3">
+            <h5 className="font-medium text-stone-900">Revisión por Sistemas</h5>
+            <ResponsiveButton size="sm" variant="secondary" onClick={cargarPerfilNormal}>Cargar Perfil Normal</ResponsiveButton>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {sistemas.map((s) => (
+              <div key={s} className="p-3 bg-stone-50 rounded-lg border border-stone-200">
+                <label className="flex items-center gap-2 text-sm mb-2">
+                  <input type="checkbox" className="rounded border-stone-300" checked={revisionPorSistemasSeleccion.includes(s)} onChange={() => toggleSistema(s)} />
+                  <span>{s}</span>
+                </label>
+                {revisionPorSistemasSeleccion.includes(s) && (
+                  <input
+                    className="w-full px-3 py-2 border border-stone-300 rounded-xl text-sm"
+                    placeholder="Hallazgos..."
+                    value={revisionPorSistemasHallazgos[s] || ''}
+                    onChange={(e) => setRevisionPorSistemasHallazgos(prev => ({ ...prev, [s]: e.target.value }))}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        </ResponsiveCard>
+
+        <ResponsiveCard>
+          <h5 className="font-medium text-stone-900 mb-3">Antecedentes personales</h5>
+          <div className={`grid gap-3 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-2'}`}>
+            {Object.keys(antecedentesPersonales).map((k) => (
+              <ResponsiveField key={k} label={k.charAt(0).toUpperCase() + k.slice(1)}>
+                <ResponsiveInput value={antecedentesPersonales[k]} onChange={(e: any) => setAntecedentesPersonales((p: any) => ({ ...p, [k]: e.target.value }))} />
+              </ResponsiveField>
+            ))}
+          </div>
+        </ResponsiveCard>
+
+        <ResponsiveField label="Antecedentes familiares">
+          <textarea className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none" rows={3} value={antecedentesFamiliares} onChange={(e) => setAntecedentesFamiliares(e.target.value)} />
+        </ResponsiveField>
+
         <ResponsiveField label="Enfermedad actual">
-          <textarea
-            className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none"
-            rows={3}
-            placeholder="Inicio, duración, características..."
-          />
+          <textarea className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none" rows={3} placeholder="Inicio, duración, características..." value={enfermedadActual} onChange={(e) => setEnfermedadActual(e.target.value)} />
         </ResponsiveField>
-        
+
         <div className={`grid gap-3 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-2'}`}>
           <ResponsiveField label="Presión arterial">
             <ResponsiveInput placeholder="120/80" />
@@ -1499,49 +1805,55 @@ function ConsultaFormView({ deviceType }: any) {
             <ResponsiveInput placeholder="72 lpm" />
           </ResponsiveField>
         </div>
-        
+
         <ResponsiveField label="Examen físico">
-          <textarea
-            className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none"
-            rows={3}
-            placeholder="Hallazgos relevantes..."
-          />
+          <textarea className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none" rows={3} placeholder="Hallazgos relevantes..." value={examenFisico} onChange={(e) => setExamenFisico(e.target.value)} />
         </ResponsiveField>
-        
+
         <ResponsiveField label="Diagnóstico principal (CIE-10)" required>
-          <ResponsiveInput placeholder="Ej: J00 - Rinofaringitis aguda" />
+          <ResponsiveInput placeholder="Ej: J00 - Rinofaringitis aguda" value={diagnostico} onChange={(e: any) => setDiagnostico(e.target.value)} />
         </ResponsiveField>
-        
+
         <ResponsiveField label="Plan de tratamiento">
-          <textarea
-            className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none"
-            rows={3}
-            placeholder="Tratamiento, educación, controles..."
-          />
+          <textarea className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none" rows={3} placeholder="Tratamiento, educación, controles..." value={planManejo} onChange={(e) => setPlanManejo(e.target.value)} />
         </ResponsiveField>
-        
-        {/* Botones de acción */}
-        {deviceType === 'mobile' && (
-          <div className="flex gap-3 pt-4">
-            <ResponsiveButton variant="outline" className="flex-1 flex items-center justify-center gap-2">
-              <Camera className="w-4 h-4" />
-              Foto
-            </ResponsiveButton>
-            <ResponsiveButton variant="outline" className="flex-1 flex items-center justify-center gap-2">
-              <Mic className="w-4 h-4" />
-              Audio
-            </ResponsiveButton>
-          </div>
-        )}
-        
+
         <div className={`flex gap-3 ${deviceType === 'mobile' ? 'flex-col' : 'flex-row'}`}>
-          <ResponsiveButton variant="secondary" className={`${deviceType === 'mobile' ? 'w-full' : 'flex-1'} flex items-center justify-center gap-2`}>
+          <ResponsiveButton 
+            variant="secondary" 
+            onClick={handleGuardar} 
+            disabled={guardando}
+            className={`${deviceType === 'mobile' ? 'w-full' : 'flex-1'} flex items-center justify-center gap-2`}
+          >
             <Save className="w-4 h-4" />
-            Guardar
+            {guardando ? 'Guardando...' : atencionId ? 'Actualizar' : 'Crear Atención'}
           </ResponsiveButton>
-          <ResponsiveButton className={`${deviceType === 'mobile' ? 'w-full' : 'flex-1'} flex items-center justify-center gap-2`}>
+          <ResponsiveButton 
+            onClick={async () => {
+              if (!atencionId) {
+                // Primero crear la atención
+                await handleGuardar();
+              } else {
+                // Guardar los datos actualizados
+                await handleGuardar();
+              }
+              
+              // Marcar atención como completada si existe
+              if (atencionId) {
+                try {
+                  await AuthService.completarAtencion(atencionId);
+                  alert('Consulta finalizada exitosamente');
+                } catch (e: any) {
+                  console.error('Error completando atención:', e);
+                  alert('Error al finalizar consulta: ' + e.message);
+                }
+              }
+            }}
+            disabled={guardando}
+            className={`${deviceType === 'mobile' ? 'w-full' : 'flex-1'} flex items-center justify-center gap-2`}
+          >
             <Send className="w-4 h-4" />
-            Finalizar
+            {guardando ? 'Finalizando...' : 'Finalizar'}
           </ResponsiveButton>
         </div>
       </div>
@@ -1549,97 +1861,311 @@ function ConsultaFormView({ deviceType }: any) {
   );
 }
 
-function RecetaFormView({ deviceType }: any) {
-  const [medicamentos, setMedicamentos] = useState([
-    { id: 1, nombre: "Paracetamol 500mg", dosis: "1 tableta", frecuencia: "Cada 8 horas", dias: "5" }
-  ]);
-  
+function RecetaFormView({ patient, deviceType }: any) {
+  const [medicamentos, setMedicamentos] = useState<any[]>([]);
+  const [nuevoMedicamento, setNuevoMedicamento] = useState({ nombre: '', dosis: '', frecuencia: '', dias: '' });
+  const [indicaciones, setIndicaciones] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [guardando, setGuardando] = useState(false);
+  const [recetaId, setRecetaId] = useState<number | null>(null);
+  const [atencionId, setAtencionId] = useState<number | null>(null);
+
+  useEffect(() => {
+    const cargarRecetas = async () => {
+      if (!patient?.id) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        setLoading(true);
+        const recetas = await AuthService.getRecetasPaciente(patient.id);
+        
+        // Obtener atencion_id de la consulta activa si existe
+        const hcList = await AuthService.get(`/pacientes/${patient.id}/hc/medicina`);
+        if (hcList && hcList.length > 0) {
+          setAtencionId(hcList[0].atencion_id);
+        }
+
+        // Cargar la última receta activa o más reciente
+        if (recetas && recetas.length > 0) {
+          const ultimaReceta = recetas[0];
+          setRecetaId(ultimaReceta.receta_id);
+          if (ultimaReceta.medicamentos && Array.isArray(ultimaReceta.medicamentos)) {
+            setMedicamentos(ultimaReceta.medicamentos);
+          }
+          setIndicaciones(ultimaReceta.indicaciones || '');
+        }
+      } catch (error) {
+        console.error('Error cargando recetas:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    cargarRecetas();
+  }, [patient?.id]);
+
+  const agregarMedicamento = () => {
+    if (!nuevoMedicamento.nombre.trim()) {
+      alert('Por favor ingresa el nombre del medicamento');
+      return;
+    }
+    
+    const nuevoId = medicamentos.length > 0 
+      ? Math.max(...medicamentos.map((m: any) => m.id || 0)) + 1 
+      : 1;
+    
+    setMedicamentos([...medicamentos, {
+      id: nuevoId,
+      ...nuevoMedicamento
+    }]);
+    
+    setNuevoMedicamento({ nombre: '', dosis: '', frecuencia: '', dias: '' });
+  };
+
+  const eliminarMedicamento = (id: any) => {
+    setMedicamentos(medicamentos.filter((m: any) => m.id !== id));
+  };
+
+  const handleGuardar = async () => {
+    if (medicamentos.length === 0) {
+      alert('Agrega al menos un medicamento a la receta');
+      return;
+    }
+
+    if (!atencionId) {
+      alert('No hay una atención asociada. Primero completa la consulta médica.');
+      return;
+    }
+
+    try {
+      setGuardando(true);
+      const user = AuthService.getCurrentUser();
+      
+      if (!user?.id || !patient?.id) {
+        throw new Error('Usuario o paciente no disponible');
+      }
+
+      const recetaData = {
+        atencion_id: atencionId,
+        paciente_id: patient.id,
+        usuario_id: user.id,
+        fecha_receta: new Date().toISOString().split('T')[0],
+        medicamentos: medicamentos,
+        indicaciones: indicaciones,
+        estado: 'Activa'
+      };
+
+      if (recetaId) {
+        // Actualizar receta existente (se puede implementar PUT si existe)
+        await AuthService.crearReceta(recetaData);
+        alert('Receta actualizada exitosamente');
+      } else {
+        const resultado = await AuthService.crearReceta(recetaData);
+        setRecetaId(resultado.receta_id);
+        alert('Receta creada exitosamente');
+      }
+    } catch (e: any) {
+      console.error('Error guardando receta:', e);
+      alert(`Error: ${e.message || 'Error guardando receta'}`);
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  const handleImprimir = () => {
+    const contenido = `
+      RECETA MÉDICA
+      
+      Paciente: ${patient?.nombre || 'N/A'}
+      Documento: ${patient?.documento || 'N/A'}
+      Fecha: ${new Date().toLocaleDateString('es-ES')}
+      
+      MEDICAMENTOS:
+      ${medicamentos.map((m: any, idx: number) => 
+        `${idx + 1}. ${m.nombre} - ${m.dosis} - ${m.frecuencia}${m.dias ? ` - ${m.dias} días` : ''}`
+      ).join('\n')}
+      
+      ${indicaciones ? `INDICACIONES:\n${indicaciones}` : ''}
+    `;
+    
+    const ventanaImpresion = window.open('', '_blank');
+    if (ventanaImpresion) {
+      ventanaImpresion.document.write(`
+        <html>
+          <head><title>Receta Médica</title></head>
+          <body style="font-family: Arial; padding: 20px;">
+            <pre>${contenido}</pre>
+          </body>
+        </html>
+      `);
+      ventanaImpresion.document.close();
+      ventanaImpresion.print();
+    }
+    
+    // Marcar como impresa
+    if (recetaId) {
+      AuthService.marcarRecetaImpresion(recetaId).catch(console.error);
+    }
+  };
+
+  const handleCompartir = async () => {
+    const contenido = `
+Receta Médica
+Paciente: ${patient?.nombre || 'N/A'}
+Documento: ${patient?.documento || 'N/A'}
+Fecha: ${new Date().toLocaleDateString('es-ES')}
+
+Medicamentos:
+${medicamentos.map((m: any, idx: number) => 
+  `${idx + 1}. ${m.nombre} - ${m.dosis} - ${m.frecuencia}${m.dias ? ` - ${m.dias} días` : ''}`
+).join('\n')}
+
+${indicaciones ? `Indicaciones:\n${indicaciones}` : ''}
+    `.trim();
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Receta Médica',
+          text: contenido
+        });
+      } catch (err) {
+        console.error('Error compartiendo:', err);
+      }
+    } else {
+      // Fallback: copiar al portapapeles
+      navigator.clipboard.writeText(contenido).then(() => {
+        alert('Receta copiada al portapapeles');
+      }).catch(() => {
+        alert('No se pudo compartir la receta');
+      });
+    }
+  };
+
+  if (loading) {
+    return (
+      <ResponsiveCard>
+        <div className="text-center py-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-bondi-500 mx-auto"></div>
+          <span className="ml-3 text-stone-600">Cargando recetas...</span>
+        </div>
+      </ResponsiveCard>
+    );
+  }
+
   return (
     <ResponsiveCard>
       <div className="flex items-center justify-between mb-4">
         <h4 className="font-semibold text-stone-900">Recetario Digital</h4>
-        <button className="p-2 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100">
-          <Plus className="w-4 h-4" />
-        </button>
+        {recetaId && (
+          <ResponsiveBadge tone="admin">Receta #{recetaId}</ResponsiveBadge>
+        )}
       </div>
       
       <div className="space-y-3 mb-4">
-        {medicamentos.map((med) => (
-          <div key={med.id} className="p-3 bg-stone-50 rounded-lg">
-            <div className="font-medium text-stone-900">{med.nombre}</div>
-            <div className="text-sm text-stone-600 mt-1">
-              {med.dosis} • {med.frecuencia} • {med.dias} días
-            </div>
+        {medicamentos.length === 0 ? (
+          <div className="text-center py-6 text-stone-500 text-sm">
+            No hay medicamentos agregados. Agrega medicamentos a continuación.
           </div>
-        ))}
+        ) : (
+          medicamentos.map((med: any) => (
+            <div key={med.id} className="p-3 bg-stone-50 rounded-lg flex items-start justify-between">
+              <div className="flex-1">
+                <div className="font-medium text-stone-900">{med.nombre}</div>
+                <div className="text-sm text-stone-600 mt-1">
+                  {med.dosis && `${med.dosis} • `}
+                  {med.frecuencia && `${med.frecuencia} • `}
+                  {med.dias && `${med.dias} días`}
+                </div>
+              </div>
+              <button
+                onClick={() => eliminarMedicamento(med.id)}
+                className="ml-2 p-1 text-red-500 hover:bg-red-50 rounded"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ))
+        )}
       </div>
       
       <div className="space-y-4">
-        <ResponsiveField label="Agregar medicamento">
-          <ResponsiveInput placeholder="Nombre del medicamento..." />
+        <ResponsiveField label="Nombre del medicamento">
+          <ResponsiveInput 
+            value={nuevoMedicamento.nombre}
+            onChange={(e: any) => setNuevoMedicamento({ ...nuevoMedicamento, nombre: e.target.value })}
+            placeholder="Ej: Paracetamol 500mg" 
+          />
         </ResponsiveField>
         
         <div className={`grid gap-3 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-2'}`}>
           <ResponsiveField label="Dosis">
-            <ResponsiveInput placeholder="1 tableta" />
+            <ResponsiveInput 
+              value={nuevoMedicamento.dosis}
+              onChange={(e: any) => setNuevoMedicamento({ ...nuevoMedicamento, dosis: e.target.value })}
+              placeholder="Ej: 1 tableta" 
+            />
           </ResponsiveField>
           <ResponsiveField label="Frecuencia">
-            <ResponsiveInput placeholder="Cada 8h" />
+            <ResponsiveInput 
+              value={nuevoMedicamento.frecuencia}
+              onChange={(e: any) => setNuevoMedicamento({ ...nuevoMedicamento, frecuencia: e.target.value })}
+              placeholder="Ej: Cada 8 horas" 
+            />
           </ResponsiveField>
         </div>
-        
-        <ResponsiveButton className="w-full">Agregar a receta</ResponsiveButton>
-        
-        <div className={`flex gap-3 ${deviceType === 'mobile' ? 'flex-col' : 'flex-row'}`}>
-          <ResponsiveButton variant="secondary" className="flex-1">
-            Vista previa
-          </ResponsiveButton>
-          <ResponsiveButton className="flex-1">
-            Imprimir
-          </ResponsiveButton>
-        </div>
-      </div>
-    </ResponsiveCard>
-  );
-}
 
-function ExamenesFormView({ deviceType }: any) {
-  return (
-    <ResponsiveCard>
-      <h4 className="font-semibold text-stone-900 mb-4">Órdenes de Exámenes</h4>
-      <div className="space-y-4">
-        <ResponsiveField label="Tipo de examen" required>
-          <ResponsiveSelect options={[
-            { value: "", label: "Seleccionar examen" },
-            { value: "hemograma", label: "Cuadro hemático completo" },
-            { value: "glicemia", label: "Glicemia en ayunas" },
-            { value: "orina", label: "Parcial de orina" },
-            { value: "radiografia", label: "Radiografía de tórax" }
-          ]} />
-        </ResponsiveField>
-        
-        <ResponsiveField label="Justificación clínica" required>
-          <textarea
-            className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none"
-            rows={3}
-            placeholder="Justificación médica para el examen..."
+        <ResponsiveField label="Duración (días)">
+          <ResponsiveInput 
+            value={nuevoMedicamento.dias}
+            onChange={(e: any) => setNuevoMedicamento({ ...nuevoMedicamento, dias: e.target.value })}
+            placeholder="Ej: 5" 
           />
         </ResponsiveField>
         
-        <ResponsiveField label="Prioridad">
-          <ResponsiveSelect options={[
-            { value: "rutinaria", label: "Rutinaria" },
-            { value: "urgente", label: "Urgente" },
-            { value: "prioritaria", label: "Prioritaria" }
-          ]} />
+        <ResponsiveButton onClick={agregarMedicamento} className="w-full" variant="secondary">
+          <Plus className="w-4 h-4 mr-2" />
+          Agregar a receta
+        </ResponsiveButton>
+
+        <ResponsiveField label="Indicaciones adicionales">
+          <textarea
+            className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none"
+            rows={3}
+            value={indicaciones}
+            onChange={(e) => setIndicaciones(e.target.value)}
+            placeholder="Indicaciones especiales, precauciones, etc..."
+          />
         </ResponsiveField>
         
         <div className={`flex gap-3 ${deviceType === 'mobile' ? 'flex-col' : 'flex-row'}`}>
-          <ResponsiveButton variant="secondary" className="flex-1">
-            Guardar orden
+          <ResponsiveButton 
+            variant="secondary" 
+            onClick={handleGuardar}
+            disabled={guardando}
+            className="flex-1"
+          >
+            <Save className="w-4 h-4 mr-2" />
+            {guardando ? 'Guardando...' : 'Guardar'}
           </ResponsiveButton>
-          <ResponsiveButton className="flex-1">
-            Generar e imprimir
+          <ResponsiveButton 
+            onClick={handleImprimir}
+            disabled={medicamentos.length === 0 || !recetaId}
+            className="flex-1"
+          >
+            <Download className="w-4 h-4 mr-2" />
+            Imprimir
+          </ResponsiveButton>
+          <ResponsiveButton 
+            variant="secondary"
+            onClick={handleCompartir}
+            disabled={medicamentos.length === 0}
+            className="flex-1"
+          >
+            <Send className="w-4 h-4 mr-2" />
+            Compartir
           </ResponsiveButton>
         </div>
       </div>
@@ -1647,56 +2173,902 @@ function ExamenesFormView({ deviceType }: any) {
   );
 }
 
-function BDPacientesView({ deviceType }: any) {
+function ExamenesFormView({ patient, deviceType }: any) {
+  const [examenes, setExamenes] = useState<any[]>([]);
+  const [nuevoExamen, setNuevoExamen] = useState({ tipo: '', nombre: '', justificacion: '', prioridad: 'rutinaria' });
+  const [indicacionesClinicas, setIndicacionesClinicas] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [guardando, setGuardando] = useState(false);
+  const [ordenId, setOrdenId] = useState<number | null>(null);
+  const [atencionId, setAtencionId] = useState<number | null>(null);
+
+  const tiposExamen = [
+    { value: "hemograma", label: "Cuadro hemático completo" },
+    { value: "glicemia", label: "Glicemia en ayunas" },
+    { value: "orina", label: "Parcial de orina" },
+    { value: "radiografia", label: "Radiografía de tórax" },
+    { value: "colesterol", label: "Colesterol total y fracciones" },
+    { value: "tsh", label: "TSH" },
+    { value: "creatinina", label: "Creatinina" },
+    { value: "ecg", label: "Electrocardiograma" },
+    { value: "otros", label: "Otros" }
+  ];
+
+  useEffect(() => {
+    const cargarOrdenes = async () => {
+      if (!patient?.id) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        setLoading(true);
+        const ordenes = await AuthService.getOrdenesPaciente(patient.id);
+        
+        // Obtener atencion_id de la consulta activa si existe
+        const hcList = await AuthService.get(`/pacientes/${patient.id}/hc/medicina`);
+        if (hcList && hcList.length > 0) {
+          setAtencionId(hcList[0].atencion_id);
+        }
+
+        // Cargar la última orden pendiente o más reciente
+        if (ordenes && ordenes.length > 0) {
+          const ultimaOrden = ordenes[0];
+          setOrdenId(ultimaOrden.orden_id);
+          if (ultimaOrden.examenes && Array.isArray(ultimaOrden.examenes)) {
+            setExamenes(ultimaOrden.examenes);
+          }
+          setIndicacionesClinicas(ultimaOrden.indicaciones_clinicas || '');
+        }
+      } catch (error) {
+        console.error('Error cargando órdenes:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    cargarOrdenes();
+  }, [patient?.id]);
+
+  const agregarExamen = () => {
+    if (!nuevoExamen.nombre.trim() || !nuevoExamen.tipo) {
+      alert('Por favor completa el tipo y nombre del examen');
+      return;
+    }
+    
+    const nuevoId = examenes.length > 0 
+      ? Math.max(...examenes.map((e: any) => e.id || 0)) + 1 
+      : 1;
+    
+    setExamenes([...examenes, {
+      id: nuevoId,
+      tipo: nuevoExamen.tipo,
+      nombre: nuevoExamen.nombre,
+      justificacion: nuevoExamen.justificacion,
+      prioridad: nuevoExamen.prioridad
+    }]);
+    
+    setNuevoExamen({ tipo: '', nombre: '', justificacion: '', prioridad: 'rutinaria' });
+  };
+
+  const eliminarExamen = (id: any) => {
+    setExamenes(examenes.filter((e: any) => e.id !== id));
+  };
+
+  const handleGuardar = async () => {
+    if (examenes.length === 0) {
+      alert('Agrega al menos un examen a la orden');
+      return;
+    }
+
+    if (!atencionId) {
+      alert('No hay una atención asociada. Primero completa la consulta médica.');
+      return;
+    }
+
+    try {
+      setGuardando(true);
+      const user = AuthService.getCurrentUser();
+      
+      if (!user?.id || !patient?.id) {
+        throw new Error('Usuario o paciente no disponible');
+      }
+
+      const ordenData = {
+        atencion_id: atencionId,
+        paciente_id: patient.id,
+        usuario_id: user.id,
+        fecha_orden: new Date().toISOString().split('T')[0],
+        examenes: examenes,
+        indicaciones_clinicas: indicacionesClinicas,
+        estado: 'Pendiente'
+      };
+
+      if (ordenId) {
+        await AuthService.crearOrdenLaboratorio(ordenData);
+        alert('Orden actualizada exitosamente');
+      } else {
+        const resultado = await AuthService.crearOrdenLaboratorio(ordenData);
+        setOrdenId(resultado.orden_id);
+        alert('Orden creada exitosamente');
+      }
+    } catch (e: any) {
+      console.error('Error guardando orden:', e);
+      alert(`Error: ${e.message || 'Error guardando orden'}`);
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  const handleImprimir = () => {
+    const contenido = `
+      ORDEN DE LABORATORIO / EXÁMENES
+      
+      Paciente: ${patient?.nombre || 'N/A'}
+      Documento: ${patient?.documento || 'N/A'}
+      Fecha: ${new Date().toLocaleDateString('es-ES')}
+      
+      EXÁMENES SOLICITADOS:
+      ${examenes.map((e: any, idx: number) => 
+        `${idx + 1}. ${e.nombre} (${e.tipo}) - Prioridad: ${e.prioridad}${e.justificacion ? `\n   Justificación: ${e.justificacion}` : ''}`
+      ).join('\n\n')}
+      
+      ${indicacionesClinicas ? `INDICACIONES CLÍNICAS:\n${indicacionesClinicas}` : ''}
+    `;
+    
+    const ventanaImpresion = window.open('', '_blank');
+    if (ventanaImpresion) {
+      ventanaImpresion.document.write(`
+        <html>
+          <head><title>Orden de Laboratorio</title></head>
+          <body style="font-family: Arial; padding: 20px;">
+            <pre>${contenido}</pre>
+          </body>
+        </html>
+      `);
+      ventanaImpresion.document.close();
+      ventanaImpresion.print();
+    }
+    
+    // Marcar como impresa
+    if (ordenId) {
+      AuthService.marcarOrdenImpresion(ordenId).catch(console.error);
+    }
+  };
+
+  const handleCompartir = async () => {
+    const contenido = `
+Orden de Laboratorio / Exámenes
+Paciente: ${patient?.nombre || 'N/A'}
+Documento: ${patient?.documento || 'N/A'}
+Fecha: ${new Date().toLocaleDateString('es-ES')}
+
+Exámenes Solicitados:
+${examenes.map((e: any, idx: number) => 
+  `${idx + 1}. ${e.nombre} (${e.tipo}) - Prioridad: ${e.prioridad}${e.justificacion ? `\n   Justificación: ${e.justificacion}` : ''}`
+).join('\n\n')}
+
+${indicacionesClinicas ? `Indicaciones Clínicas:\n${indicacionesClinicas}` : ''}
+    `.trim();
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Orden de Laboratorio',
+          text: contenido
+        });
+      } catch (err) {
+        console.error('Error compartiendo:', err);
+      }
+    } else {
+      navigator.clipboard.writeText(contenido).then(() => {
+        alert('Orden copiada al portapapeles');
+      }).catch(() => {
+        alert('No se pudo compartir la orden');
+      });
+    }
+  };
+
+  if (loading) {
+    return (
+      <ResponsiveCard>
+        <div className="text-center py-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-bondi-500 mx-auto"></div>
+          <span className="ml-3 text-stone-600">Cargando órdenes...</span>
+        </div>
+      </ResponsiveCard>
+    );
+  }
+
+  return (
+    <ResponsiveCard>
+      <div className="flex items-center justify-between mb-4">
+        <h4 className="font-semibold text-stone-900">Órdenes de Exámenes</h4>
+        {ordenId && (
+          <ResponsiveBadge tone="admin">Orden #{ordenId}</ResponsiveBadge>
+        )}
+      </div>
+      <div className="space-y-4">
+        <div className="space-y-3 mb-4">
+          {examenes.length === 0 ? (
+            <div className="text-center py-6 text-stone-500 text-sm">
+              No hay exámenes agregados. Agrega exámenes a continuación.
+            </div>
+          ) : (
+            examenes.map((exam: any) => (
+              <div key={exam.id} className="p-3 bg-stone-50 rounded-lg flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="font-medium text-stone-900">{exam.nombre}</div>
+                  <div className="text-sm text-stone-600 mt-1">
+                    Tipo: {tiposExamen.find(t => t.value === exam.tipo)?.label || exam.tipo} • 
+                    Prioridad: {exam.prioridad}
+                  </div>
+                  {exam.justificacion && (
+                    <div className="text-xs text-stone-500 mt-1">
+                      {exam.justificacion}
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={() => eliminarExamen(exam.id)}
+                  className="ml-2 p-1 text-red-500 hover:bg-red-50 rounded"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+
+        <ResponsiveField label="Tipo de examen" required>
+          <select
+            className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base"
+            value={nuevoExamen.tipo}
+            onChange={(e) => {
+              const tipo = e.target.value;
+              setNuevoExamen({ 
+                ...nuevoExamen, 
+                tipo,
+                nombre: tipo === 'otros' ? '' : (tiposExamen.find(t => t.value === tipo)?.label || '')
+              });
+            }}
+          >
+            <option value="">Seleccionar examen</option>
+            {tiposExamen.map(tipo => (
+              <option key={tipo.value} value={tipo.value}>{tipo.label}</option>
+            ))}
+          </select>
+        </ResponsiveField>
+
+        <ResponsiveField label="Nombre del examen" required>
+          <ResponsiveInput 
+            value={nuevoExamen.nombre}
+            onChange={(e: any) => setNuevoExamen({ ...nuevoExamen, nombre: e.target.value })}
+            placeholder={nuevoExamen.tipo === 'otros' ? "Especificar examen" : "Nombre del examen"}
+            disabled={nuevoExamen.tipo !== 'otros' && nuevoExamen.tipo !== ''}
+          />
+        </ResponsiveField>
+        
+        <ResponsiveField label="Justificación clínica">
+          <textarea
+            className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none"
+            rows={2}
+            value={nuevoExamen.justificacion}
+            onChange={(e) => setNuevoExamen({ ...nuevoExamen, justificacion: e.target.value })}
+            placeholder="Justificación médica para este examen..."
+          />
+        </ResponsiveField>
+
+        <ResponsiveField label="Prioridad">
+          <select
+            className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base"
+            value={nuevoExamen.prioridad}
+            onChange={(e) => setNuevoExamen({ ...nuevoExamen, prioridad: e.target.value })}
+          >
+            <option value="rutinaria">Rutinaria</option>
+            <option value="prioritaria">Prioritaria</option>
+            <option value="urgente">Urgente</option>
+          </select>
+        </ResponsiveField>
+
+        <ResponsiveButton onClick={agregarExamen} className="w-full" variant="secondary">
+          <Plus className="w-4 h-4 mr-2" />
+          Agregar a orden
+        </ResponsiveButton>
+
+        <ResponsiveField label="Indicaciones clínicas generales">
+          <textarea
+            className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none"
+            rows={3}
+            value={indicacionesClinicas}
+            onChange={(e) => setIndicacionesClinicas(e.target.value)}
+            placeholder="Indicaciones clínicas generales para todos los exámenes..."
+          />
+        </ResponsiveField>
+        
+        <div className={`flex gap-3 ${deviceType === 'mobile' ? 'flex-col' : 'flex-row'}`}>
+          <ResponsiveButton 
+            variant="secondary" 
+            onClick={handleGuardar}
+            disabled={guardando}
+            className="flex-1"
+          >
+            <Save className="w-4 h-4 mr-2" />
+            {guardando ? 'Guardando...' : 'Guardar'}
+          </ResponsiveButton>
+          <ResponsiveButton 
+            onClick={handleImprimir}
+            disabled={examenes.length === 0 || !ordenId}
+            className="flex-1"
+          >
+            <Download className="w-4 h-4 mr-2" />
+            Imprimir
+          </ResponsiveButton>
+          <ResponsiveButton 
+            variant="secondary"
+            onClick={handleCompartir}
+            disabled={examenes.length === 0}
+            className="flex-1"
+          >
+            <Send className="w-4 h-4 mr-2" />
+            Compartir
+          </ResponsiveButton>
+        </div>
+      </div>
+    </ResponsiveCard>
+  );
+}
+
+function ConsultasRealizadasView({ deviceType }: any) {
+  const [hcCompletadas, setHcCompletadas] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filtroDesde, setFiltroDesde] = useState<string>('');
+  const [filtroHasta, setFiltroHasta] = useState<string>('');
+  const [selectedHC, setSelectedHC] = useState<any>(null);
+
+  const loadHCCompletadas = async () => {
+    try {
+      setLoading(true);
+      const user = AuthService.getCurrentUser();
+      if (user?.id) {
+        const data = await AuthService.getHCCompletadas(
+          Number(user.id),
+          filtroDesde || undefined,
+          filtroHasta || undefined
+        );
+        setHcCompletadas(data || []);
+      }
+    } catch (error) {
+      console.error('Error cargando HC completadas:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadHCCompletadas();
+  }, [filtroDesde, filtroHasta]);
+
+  const getNombreCompleto = (hc: any) => {
+    return `${hc.primer_nombre || ''} ${hc.segundo_nombre || ''} ${hc.primer_apellido || ''} ${hc.segundo_apellido || ''}`.trim();
+  };
+
+  if (selectedHC) {
+    return (
+      <div className="space-y-4 md:space-y-6">
+        <ResponsiveCard>
+          <div className="flex items-center gap-3 mb-4">
+            <button onClick={() => setSelectedHC(null)} className="p-2 -ml-2 rounded-lg hover:bg-stone-100">
+              <ChevronRight className="w-5 h-5 rotate-180" />
+            </button>
+            <div className="flex-1">
+              <h3 className="font-semibold text-stone-900">{getNombreCompleto(selectedHC)}</h3>
+              <p className="text-sm text-stone-500">
+                {selectedHC.numero_documento} • {new Date(selectedHC.fecha_atencion).toLocaleDateString('es-ES')}
+              </p>
+            </div>
+          </div>
+        </ResponsiveCard>
+
+        <ResponsiveCard>
+          <h4 className="font-semibold text-stone-900 mb-4">Detalles de la Consulta</h4>
+          <div className="space-y-3">
+            <div>
+              <div className="text-xs text-stone-500 mb-1">Motivo de Consulta</div>
+              <div className="text-sm text-stone-900">{selectedHC.motivo_consulta || 'N/A'}</div>
+            </div>
+            <div>
+              <div className="text-xs text-stone-500 mb-1">Diagnóstico</div>
+              <div className="text-sm text-stone-900">{selectedHC.diagnosticos_cie10 || 'N/A'}</div>
+            </div>
+            <div>
+              <div className="text-xs text-stone-500 mb-1">Plan de Manejo</div>
+              <div className="text-sm text-stone-900">{selectedHC.plan_manejo || 'N/A'}</div>
+            </div>
+          </div>
+        </ResponsiveCard>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4 md:space-y-6">
+      <ResponsiveCard>
+        <h3 className="font-semibold text-stone-900 mb-4">Consultas Realizadas</h3>
+        
+        <div className="space-y-3 mb-4">
+          <div className={`grid gap-3 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-2'}`}>
+            <ResponsiveField label="Desde">
+              <ResponsiveInput
+                type="date"
+                value={filtroDesde}
+                onChange={(e: any) => setFiltroDesde(e.target.value)}
+              />
+            </ResponsiveField>
+            <ResponsiveField label="Hasta">
+              <ResponsiveInput
+                type="date"
+                value={filtroHasta}
+                onChange={(e: any) => setFiltroHasta(e.target.value)}
+              />
+            </ResponsiveField>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="text-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-bondi-500 mx-auto"></div>
+            <span className="ml-3 text-stone-600">Cargando consultas...</span>
+          </div>
+        ) : hcCompletadas.length === 0 ? (
+          <div className="text-center py-8">
+            <div className="text-sm text-stone-500 mb-2">No hay consultas realizadas</div>
+            <div className="text-xs text-stone-400">
+              {filtroDesde || filtroHasta ? 'Intenta con otros filtros de fecha' : 'Las consultas completadas aparecerán aquí'}
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {hcCompletadas.map((hc) => (
+              <button
+                key={hc.atencion_id}
+                onClick={() => setSelectedHC(hc)}
+                className="w-full p-4 bg-stone-50 rounded-xl text-left hover:bg-stone-100 transition-colors"
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <h4 className="font-medium text-stone-900 mb-1">
+                      {getNombreCompleto(hc)}
+                    </h4>
+                    <p className="text-sm text-stone-500 mb-2">
+                      {hc.numero_documento} • Familia {hc.familia_apellido}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-stone-400" />
+                      <span className="text-sm text-stone-600">
+                        {new Date(hc.fecha_atencion).toLocaleDateString('es-ES', { 
+                          day: '2-digit', 
+                          month: 'long', 
+                          year: 'numeric' 
+                        })}
+                      </span>
+                    </div>
+                    {hc.diagnosticos_cie10 && (
+                      <div className="mt-2">
+                        <ResponsiveBadge tone="health">{hc.diagnosticos_cie10}</ResponsiveBadge>
+                      </div>
+                    )}
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-stone-400" />
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </ResponsiveCard>
+    </div>
+  );
+}
+
+function BitacoraView({ deviceType }: any) {
+  const [bitacora, setBitacora] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [mes, setMes] = useState(new Date().getMonth() + 1);
+  const [ano, setAno] = useState(new Date().getFullYear());
+
+  const meses = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+  ];
+
+  const loadBitacora = async () => {
+    try {
+      setLoading(true);
+      const user = AuthService.getCurrentUser();
+      if (user?.id) {
+        const data = await AuthService.getBitacora(Number(user.id), mes, ano);
+        setBitacora(data);
+      }
+    } catch (error) {
+      console.error('Error cargando bitácora:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadBitacora();
+  }, [mes, ano]);
+
+  return (
+    <div className="space-y-4 md:space-y-6">
+      <ResponsiveCard>
+        <h3 className="font-semibold text-stone-900 mb-4">Bitácora de Actividades</h3>
+        
+        <div className="space-y-3 mb-4">
+          <div className={`grid gap-3 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-2'}`}>
+            <ResponsiveField label="Mes">
+              <select
+                className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base"
+                value={mes}
+                onChange={(e) => setMes(Number(e.target.value))}
+              >
+                {meses.map((m, idx) => (
+                  <option key={idx} value={idx + 1}>{m}</option>
+                ))}
+              </select>
+            </ResponsiveField>
+            <ResponsiveField label="Año">
+              <ResponsiveInput
+                type="number"
+                value={ano}
+                onChange={(e: any) => setAno(Number(e.target.value))}
+                min="2020"
+                max={new Date().getFullYear()}
+              />
+            </ResponsiveField>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="text-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-bondi-500 mx-auto"></div>
+            <span className="ml-3 text-stone-600">Cargando bitácora...</span>
+          </div>
+        ) : bitacora ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-4 p-4 bg-stone-50 rounded-lg">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-emerald-600">{bitacora.total_consultas || 0}</div>
+                <div className="text-xs text-stone-600">Consultas</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-blue-600">{bitacora.total_recetas || 0}</div>
+                <div className="text-xs text-stone-600">Recetas</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-purple-600">{bitacora.total_ordenes || 0}</div>
+                <div className="text-xs text-stone-600">Órdenes</div>
+              </div>
+            </div>
+
+            {bitacora.detalle_diario && bitacora.detalle_diario.length > 0 ? (
+              <div className="space-y-2">
+                <h4 className="font-medium text-stone-900">Actividad Diaria</h4>
+                {bitacora.detalle_diario.map((dia: any, idx: number) => (
+                  <div key={idx} className="p-3 bg-stone-50 rounded-lg flex items-center justify-between">
+                    <div>
+                      <div className="font-medium text-stone-900">
+                        {new Date(dia.fecha).toLocaleDateString('es-ES', { 
+                          day: 'numeric', 
+                          month: 'short' 
+                        })}
+                      </div>
+                    </div>
+                    <div className="flex gap-4 text-sm">
+                      <span className="text-emerald-600">{dia.total_consultas || 0} consultas</span>
+                      <span className="text-blue-600">{dia.total_recetas || 0} recetas</span>
+                      <span className="text-purple-600">{dia.total_ordenes || 0} órdenes</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-stone-500 text-sm">
+                No hay actividad registrada para este período
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="text-center py-8 text-stone-500 text-sm">
+            Error cargando bitácora
+          </div>
+        )}
+      </ResponsiveCard>
+    </div>
+  );
+}
+
+function BDPacientesView({ deviceType, onSelectPaciente }: any) {
   const [searchTerm, setSearchTerm] = useState("");
-  const [searchType, setSearchType] = useState("documento");
+  const [resultados, setResultados] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedPatient, setSelectedPatient] = useState<any>(null);
+  const searchTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   
+  const handleSelectPaciente = async (paciente: any) => {
+    try {
+      // Obtener datos completos de la familia
+      const familia = await AuthService.getFamiliaPorId(paciente.familia_id);
+      const familiaData = {
+        familia_id: familia.familia_id,
+        apellido_principal: familia.apellido_principal,
+        direccion: familia.direccion,
+        barrio_vereda: familia.barrio_vereda,
+        municipio: familia.municipio,
+        telefono_contacto: familia.telefono_contacto
+      };
+      
+      setSelectedPatient(paciente);
+      
+      if (onSelectPaciente) {
+        onSelectPaciente(paciente, familiaData);
+      }
+    } catch (error) {
+      console.error('Error cargando familia:', error);
+      alert('Error al cargar datos de la familia');
+    }
+  };
+  
+  const handleBuscar = async (termino: string) => {
+    if (!termino.trim()) {
+      setResultados([]);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const pacientes = await AuthService.buscarPacientes(termino);
+      setResultados(pacientes || []);
+    } catch (error) {
+      console.error('Error buscando pacientes:', error);
+      alert('Error al buscar pacientes');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSearchChange = (value: string) => {
+    setSearchTerm(value);
+    
+    // Limpiar timeout anterior
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    
+    // Búsqueda con debounce de 300ms
+    searchTimeoutRef.current = setTimeout(() => {
+      handleBuscar(value);
+    }, 300);
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+      handleBuscar(searchTerm);
+    }
+  };
+  
+  // Limpiar timeout al desmontar
+  useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, []);
+
   return (
     <div className="space-y-4 md:space-y-6">
       <ResponsiveCard>
         <h3 className="font-semibold text-stone-900 mb-4">Buscar Pacientes</h3>
         
         <div className="space-y-4">
-          <ResponsiveField label="Tipo de búsqueda">
-            <ResponsiveSelect 
-              value={searchType}
-              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSearchType(e.target.value)}
-              options={[
-                { value: "documento", label: "Por documento" },
-                { value: "nombre", label: "Por nombre" },
-                { value: "familia", label: "Por familia" }
-              ]} 
-            />
+          <ResponsiveField label="Búsqueda">
+            <div className="flex gap-2">
+              <ResponsiveInput 
+                value={searchTerm}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleSearchChange(e.target.value)}
+                onKeyPress={handleKeyPress}
+                placeholder="Documento, nombre, apellido o familia..."
+                className="flex-1"
+              />
+              <ResponsiveButton onClick={() => handleBuscar(searchTerm)} disabled={loading}>
+                <Search className="w-4 h-4" />
+              </ResponsiveButton>
+            </div>
           </ResponsiveField>
-          
-          <ResponsiveField label="Término de búsqueda">
-            <ResponsiveInput 
-              value={searchTerm}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
-              placeholder={
-                searchType === "documento" ? "Número de documento..." :
-                searchType === "nombre" ? "Nombre del paciente..." :
-                "Apellido de familia..."
-              }
-            />
-          </ResponsiveField>
-          
-          <ResponsiveButton className="w-full flex items-center justify-center gap-2">
-            <Search className="w-4 h-4" />
-            Buscar
-          </ResponsiveButton>
         </div>
       </ResponsiveCard>
       
-      {searchTerm && (
+      {loading ? (
         <ResponsiveCard>
-          <h4 className="font-semibold text-stone-900 mb-3">Resultados</h4>
-          <div className="text-center py-8 text-stone-500">
-            <Search className="w-12 h-12 mx-auto mb-2 text-stone-300" />
-            <p>Ingrese un término de búsqueda</p>
+          <div className="text-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-bondi-500 mx-auto"></div>
+            <span className="ml-3 text-stone-600">Buscando...</span>
           </div>
         </ResponsiveCard>
-      )}
+      ) : resultados.length > 0 ? (
+        <ResponsiveCard>
+          <h4 className="font-semibold text-stone-900 mb-3">
+            Resultados ({resultados.length})
+          </h4>
+          <div className="space-y-3">
+            {resultados.map((paciente) => {
+              const nombreCompleto = `${paciente.primer_nombre || ''} ${paciente.segundo_nombre || ''} ${paciente.primer_apellido || ''} ${paciente.segundo_apellido || ''}`.trim();
+              return (
+                <button
+                  key={paciente.paciente_id}
+                  onClick={() => handleSelectPaciente(paciente)}
+                  className="w-full p-4 bg-stone-50 rounded-xl hover:bg-stone-100 transition-colors text-left"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="font-medium text-stone-900 mb-1">{nombreCompleto}</div>
+                      <div className="text-sm text-stone-600">
+                        {paciente.tipo_documento} {paciente.numero_documento} • 
+                        Familia {paciente.familia_apellido}
+                        {paciente.familia_municipio && ` • ${paciente.familia_municipio}`}
+                      </div>
+                      {paciente.fecha_nacimiento && (
+                        <div className="text-xs text-stone-500 mt-1">
+                          Nacimiento: {new Date(paciente.fecha_nacimiento).toLocaleDateString('es-ES')}
+                        </div>
+                      )}
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-stone-400 ml-2" />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </ResponsiveCard>
+      ) : searchTerm ? (
+        <ResponsiveCard>
+          <div className="text-center py-8 text-stone-500">
+            <Search className="w-12 h-12 mx-auto mb-2 text-stone-300" />
+            <p>No se encontraron pacientes</p>
+            <p className="text-xs text-stone-400 mt-1">Intenta con otro término de búsqueda</p>
+          </div>
+        </ResponsiveCard>
+      ) : null}
+    </div>
+  );
+}
+
+function DashboardEpidemioView({ deviceType }: any) {
+  const [dashboard, setDashboard] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadDashboard = async () => {
+      try {
+        setLoading(true);
+        const data = await AuthService.getDashboardEpidemio();
+        setDashboard(data);
+      } catch (error) {
+        console.error('Error cargando dashboard:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadDashboard();
+  }, []);
+
+  if (loading) {
+    return (
+      <ResponsiveCard>
+        <div className="text-center py-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-bondi-500 mx-auto"></div>
+          <span className="ml-3 text-stone-600">Cargando dashboard...</span>
+        </div>
+      </ResponsiveCard>
+    );
+  }
+
+  return (
+    <div className="space-y-4 md:space-y-6">
+      <ResponsiveCard>
+        <h3 className="font-semibold text-stone-900 mb-4">Dashboard Epidemiológico</h3>
+        
+        {dashboard ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="p-4 bg-stone-50 rounded-lg text-center">
+                <div className="text-2xl font-bold text-emerald-600">{dashboard.total_familias || 0}</div>
+                <div className="text-xs text-stone-600">Familias</div>
+              </div>
+              <div className="p-4 bg-stone-50 rounded-lg text-center">
+                <div className="text-2xl font-bold text-blue-600">{dashboard.total_pacientes || 0}</div>
+                <div className="text-xs text-stone-600">Pacientes</div>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="p-4 bg-stone-50 rounded-lg text-center">
+                <div className="text-2xl font-bold text-purple-600">{dashboard.total_atenciones || 0}</div>
+                <div className="text-xs text-stone-600">Total Atenciones</div>
+              </div>
+              <div className="p-4 bg-stone-50 rounded-lg text-center">
+                <div className="text-2xl font-bold text-orange-600">{dashboard.atenciones_mes || 0}</div>
+                <div className="text-xs text-stone-600">Este Mes</div>
+              </div>
+            </div>
+
+            {dashboard.diagnosticos_frecuentes && dashboard.diagnosticos_frecuentes.length > 0 && (
+              <div>
+                <h4 className="font-medium text-stone-900 mb-3">Diagnósticos Más Frecuentes</h4>
+                <div className="space-y-2">
+                  {dashboard.diagnosticos_frecuentes.slice(0, 5).map((diag: any, idx: number) => (
+                    <div key={idx} className="p-3 bg-stone-50 rounded-lg flex items-center justify-between">
+                      <span className="text-sm text-stone-900">{diag.diagnosticos_cie10 || 'N/A'}</span>
+                      <ResponsiveBadge tone="health">{diag.frecuencia}</ResponsiveBadge>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="text-center py-8 text-stone-500 text-sm">
+            No hay datos disponibles
+          </div>
+        )}
+      </ResponsiveCard>
+    </div>
+  );
+}
+
+function ConfiguracionView({ deviceType }: any) {
+  return (
+    <div className="space-y-4 md:space-y-6">
+      <ResponsiveCard>
+        <h3 className="font-semibold text-stone-900 mb-4">Configuración</h3>
+        <div className="space-y-4">
+          <div className="text-center py-8 text-stone-500 text-sm">
+            Opciones de configuración próximamente
+          </div>
+        </div>
+      </ResponsiveCard>
+    </div>
+  );
+}
+
+function AyudaView({ deviceType }: any) {
+  return (
+    <div className="space-y-4 md:space-y-6">
+      <ResponsiveCard>
+        <h3 className="font-semibold text-stone-900 mb-4">Ayuda y Soporte</h3>
+        <div className="space-y-4">
+          <div>
+            <h4 className="font-medium text-stone-900 mb-2">Preguntas Frecuentes</h4>
+            <div className="text-sm text-stone-600">
+              <p className="mb-2">• ¿Cómo crear una nueva consulta médica?</p>
+              <p className="mb-2">• ¿Cómo generar una receta?</p>
+              <p className="mb-2">• ¿Cómo buscar pacientes?</p>
+            </div>
+          </div>
+          <div>
+            <h4 className="font-medium text-stone-900 mb-2">Contacto</h4>
+            <div className="text-sm text-stone-600">
+              <p>Para soporte técnico, contacta al administrador del sistema.</p>
+            </div>
+          </div>
+        </div>
+      </ResponsiveCard>
     </div>
   );
 }
@@ -1770,12 +3142,14 @@ function CrearFamiliaView({ deviceType }: any) {
           
           {submitError && <div className="text-sm text-red-600">{submitError}</div>}
           
-          <div className={`flex gap-3 pt-4 ${deviceType === 'mobile' ? 'flex-col' : 'flex-row'}`}>
-            <ResponsiveButton variant="secondary" className="flex-1" onClick={handleSubmit} disabled={isSubmitting}>
-              {isSubmitting ? 'Guardando...' : 'Guardar'}
-            </ResponsiveButton>
-            <ResponsiveButton className="flex-1">
-              Crear Caracterización
+          <div className="pt-4">
+            <ResponsiveButton 
+              variant="primary" 
+              className="w-full" 
+              onClick={handleSubmit} 
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? 'Guardando...' : 'Guardar Nueva Familia'}
             </ResponsiveButton>
           </div>
         </div>
@@ -2187,6 +3561,10 @@ function FormularioCaracterizacionView({ familia, caracterizacionExistente, onSa
 
 // Vista: Plan de Cuidado Familiar
 function PlanCuidadoView({ paciente, familia, onBack }: any) {
+  const { user } = useAuth();
+  const isAuxiliar = (user?.role === 'auxiliar_enfermeria');
+  const isMedico = (user?.role === 'medico');
+  const canCreatePlan = isAuxiliar || isMedico;
   const [planes, setPlanes] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -2269,9 +3647,11 @@ function PlanCuidadoView({ paciente, familia, onBack }: any) {
             <ResponsiveButton variant="secondary" onClick={onBack}>
               Volver
             </ResponsiveButton>
-            <ResponsiveButton onClick={() => setShowForm(true)}>
-              Nuevo Plan
-            </ResponsiveButton>
+            {canCreatePlan && (
+              <ResponsiveButton onClick={() => setShowForm(true)}>
+                Nuevo Plan
+              </ResponsiveButton>
+            )}
           </div>
         </div>
       </ResponsiveCard>
@@ -2458,14 +3838,35 @@ function PlanCuidadoView({ paciente, familia, onBack }: any) {
 
 // Vista: Demandas Inducidas
 function DemandasInducidasView({ paciente, familia, onBack }: any) {
+  const { user } = useAuth();
+  const isAuxiliar = (user?.role === 'auxiliar_enfermeria');
+  const isMedico = (user?.role === 'medico');
+  const canCreateDemanda = isAuxiliar || isMedico;
   const [demandas, setDemandas] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [profesionalesDisponibles, setProfesionalesDisponibles] = useState<any>({});
+  const [loadingProfesionales, setLoadingProfesionales] = useState<any>({});
+  const [tiposProfesionalesSeleccionados, setTiposProfesionalesSeleccionados] = useState<string[]>([]);
+  
+  const tiposProfesionales = [
+    { id: 'Médico', nombre: 'Médico' },
+    { id: 'Enfermero', nombre: 'Enfermero' },
+    { id: 'Psicólogo', nombre: 'Psicólogo' },
+    { id: 'Fisioterapeuta', nombre: 'Fisioterapeuta' },
+    { id: 'Nutricionista', nombre: 'Nutricionista' },
+    { id: 'Fonoaudiólogo', nombre: 'Fonoaudiólogo' },
+    { id: 'Odontólogo', nombre: 'Odontólogo' }
+  ];
+  
   const [form, setForm] = useState<any>({
     numero_formulario: '',
     fecha_demanda: new Date().toISOString().split('T')[0],
     diligenciamiento: [],
-    remision_a: [],
+    remision_a: {
+      profesionales: [],
+      examenes_laboratorio: []
+    },
     estado: 'Pendiente',
     asignado_a_uid: null,
     seguimiento: {}
@@ -2487,6 +3888,28 @@ function DemandasInducidasView({ paciente, familia, onBack }: any) {
     loadDemandas();
   }, [paciente.paciente_id]);
 
+  // Cargar profesionales cuando se selecciona un tipo
+  useEffect(() => {
+    const cargarProfesionales = async (tipo: string) => {
+      if (profesionalesDisponibles[tipo] || loadingProfesionales[tipo]) return;
+      
+      setLoadingProfesionales((prev: any) => ({ ...prev, [tipo]: true }));
+      try {
+        const usuarios = await AuthService.getUsuariosPorRol(tipo);
+        setProfesionalesDisponibles((prev: any) => ({ ...prev, [tipo]: usuarios }));
+      } catch (error) {
+        console.error(`Error cargando profesionales ${tipo}:`, error);
+        setProfesionalesDisponibles((prev: any) => ({ ...prev, [tipo]: [] }));
+      } finally {
+        setLoadingProfesionales((prev: any) => ({ ...prev, [tipo]: false }));
+      }
+    };
+
+    tiposProfesionalesSeleccionados.forEach(tipo => {
+      cargarProfesionales(tipo);
+    });
+  }, [tiposProfesionalesSeleccionados]);
+
   const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setForm(prev => ({ ...prev, [name]: value }));
@@ -2494,10 +3917,18 @@ function DemandasInducidasView({ paciente, familia, onBack }: any) {
 
   const handleSaveDemanda = async () => {
     try {
+      // Si hay profesionales asignados, usar el primero como asignado_a_uid (para compatibilidad)
+      let asignadoAId = null;
+      if (form.remision_a.profesionales && form.remision_a.profesionales.length > 0) {
+        asignadoAId = form.remision_a.profesionales[0].profesional_id;
+      }
+      
       const newDemanda = {
         ...form,
         paciente_id: paciente.paciente_id,
-        solicitado_por_uid: 1 // TODO: Reemplazar con el UID del usuario logueado
+        solicitado_por_uid: Number(user?.id) || 1,
+        asignado_a_uid: asignadoAId,
+        remision_a: form.remision_a // El backend lo convertirá a JSON string
       };
       await AuthService.crearDemandaInducida(newDemanda);
       setShowForm(false);
@@ -2505,16 +3936,87 @@ function DemandasInducidasView({ paciente, familia, onBack }: any) {
         numero_formulario: '',
         fecha_demanda: new Date().toISOString().split('T')[0],
         diligenciamiento: [],
-        remision_a: [],
+        remision_a: {
+          profesionales: [],
+          examenes_laboratorio: []
+        },
         estado: 'Pendiente',
         asignado_a_uid: null,
         seguimiento: {}
       });
+      setTiposProfesionalesSeleccionados([]);
+      setProfesionalesDisponibles({});
       loadDemandas();
     } catch (error) {
       console.error('Error guardando demanda:', error);
       alert('Error guardando demanda. Verifique la consola.');
     }
+  };
+
+  const toggleTipoProfesional = (tipo: string) => {
+    if (tiposProfesionalesSeleccionados.includes(tipo)) {
+      setTiposProfesionalesSeleccionados(tiposProfesionalesSeleccionados.filter(t => t !== tipo));
+      // Remover profesionales de ese tipo del form
+      setForm((prev: any) => ({
+        ...prev,
+        remision_a: {
+          ...prev.remision_a,
+          profesionales: prev.remision_a.profesionales.filter((p: any) => p.tipo !== tipo)
+        }
+      }));
+    } else {
+      setTiposProfesionalesSeleccionados([...tiposProfesionalesSeleccionados, tipo]);
+    }
+  };
+
+  const handleProfesionalChange = (tipo: string, profesionalId: string) => {
+    const profesional = profesionalesDisponibles[tipo]?.find((p: any) => p.usuario_id.toString() === profesionalId);
+    if (!profesional) return;
+    
+    setForm((prev: any) => {
+      const profesionales = prev.remision_a.profesionales.filter((p: any) => p.tipo !== tipo);
+      profesionales.push({
+        tipo,
+        profesional_id: profesional.usuario_id,
+        nombre: profesional.nombre_completo
+      });
+      
+      return {
+        ...prev,
+        remision_a: {
+          ...prev.remision_a,
+          profesionales
+        }
+      };
+    });
+  };
+
+  const handleExamenesChange = (examenes: string[]) => {
+    setForm((prev: any) => ({
+      ...prev,
+      remision_a: {
+        ...prev.remision_a,
+        examenes_laboratorio: examenes
+      }
+    }));
+  };
+
+  const handleCancelForm = () => {
+    setShowForm(false);
+    setForm({
+      numero_formulario: '',
+      fecha_demanda: new Date().toISOString().split('T')[0],
+      diligenciamiento: [],
+      remision_a: {
+        profesionales: [],
+        examenes_laboratorio: []
+      },
+      estado: 'Pendiente',
+      asignado_a_uid: null,
+      seguimiento: {}
+    });
+    setTiposProfesionalesSeleccionados([]);
+    setProfesionalesDisponibles({});
   };
 
   if (loading) {
@@ -2542,9 +4044,11 @@ function DemandasInducidasView({ paciente, familia, onBack }: any) {
             <ResponsiveButton variant="secondary" onClick={onBack}>
               Volver
             </ResponsiveButton>
-            <ResponsiveButton onClick={() => setShowForm(true)}>
-              Crear Demanda
-            </ResponsiveButton>
+            {canCreateDemanda && (
+              <ResponsiveButton onClick={() => setShowForm(true)}>
+                Crear Demanda
+              </ResponsiveButton>
+            )}
           </div>
         </div>
       </ResponsiveCard>
@@ -2573,25 +4077,17 @@ function DemandasInducidasView({ paciente, familia, onBack }: any) {
                 />
               </ResponsiveField>
               <ResponsiveField label="Estado">
-                <ResponsiveSelect
+                <select
                   name="estado"
                   value={form.estado}
                   onChange={handleFormChange}
+                  className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm"
                 >
                   <option value="Pendiente">Pendiente</option>
                   <option value="Asignada">Asignada</option>
                   <option value="Realizada">Realizada</option>
                   <option value="Cancelada">Cancelada</option>
-                </ResponsiveSelect>
-              </ResponsiveField>
-              <ResponsiveField label="Asignado a (UID)">
-                <ResponsiveInput
-                  type="number"
-                  name="asignado_a_uid"
-                  value={form.asignado_a_uid || ''}
-                  onChange={handleFormChange}
-                  placeholder="Ej: 1 (ID del profesional)"
-                />
+                </select>
               </ResponsiveField>
             </div>
 
@@ -2634,45 +4130,80 @@ function DemandasInducidasView({ paciente, familia, onBack }: any) {
               </div>
             </div>
 
+            {/* Selección de profesionales del equipo básico */}
             <div>
-              <label className="text-sm font-medium text-stone-700 mb-2 block">Remisión a</label>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                {[
-                  'Psicología',
-                  'Trabajo social',
-                  'Medicina general',
-                  'Fisioterapia',
-                  'Nutrición',
-                  'Enfermería',
-                  'Fonoaudiología',
-                  'Terapia respiratoria'
-                ].map((opcion) => (
-                  <label key={opcion} className="flex items-center space-x-2 text-sm">
-                    <input
-                      type="checkbox"
-                      className="rounded border-stone-300"
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setForm(prev => ({
-                            ...prev,
-                            remision_a: [...prev.remision_a, opcion]
-                          }));
-                        } else {
-                          setForm(prev => ({
-                            ...prev,
-                            remision_a: prev.remision_a.filter((item: string) => item !== opcion)
-                          }));
-                        }
-                      }}
-                    />
-                    <span>{opcion}</span>
-                  </label>
-                ))}
+              <label className="text-sm font-medium text-stone-700 mb-2 block">
+                Remisión a profesionales del equipo básico
+              </label>
+              <div className="space-y-3">
+                {/* Checkboxes para seleccionar tipos de profesionales */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
+                  {tiposProfesionales.map((tipo) => (
+                    <label key={tipo.id} className="flex items-center space-x-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="rounded border-stone-300"
+                        checked={tiposProfesionalesSeleccionados.includes(tipo.id)}
+                        onChange={() => toggleTipoProfesional(tipo.id)}
+                      />
+                      <span>{tipo.nombre}</span>
+                    </label>
+                  ))}
+                </div>
+                
+                {/* Desplegables para profesionales según tipo seleccionado */}
+                {tiposProfesionalesSeleccionados.map((tipo) => {
+                  const profesionales = profesionalesDisponibles[tipo] || [];
+                  const profesionalSeleccionado = form.remision_a.profesionales.find((p: any) => p.tipo === tipo);
+                  
+                  return (
+                    <div key={tipo} className="space-y-1">
+                      <label className="text-xs font-medium text-stone-600">{tipo}</label>
+                      {loadingProfesionales[tipo] ? (
+                        <div className="text-xs text-stone-500">Cargando profesionales...</div>
+                      ) : profesionales.length > 0 ? (
+                        <select
+                          value={profesionalSeleccionado?.profesional_id?.toString() || ''}
+                          onChange={(e) => handleProfesionalChange(tipo, e.target.value)}
+                          className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm"
+                        >
+                          <option value="">Seleccione un {tipo.toLowerCase()}</option>
+                          {profesionales.map((prof: any) => (
+                            <option key={prof.usuario_id} value={prof.usuario_id.toString()}>
+                              {prof.nombre_completo}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <div className="text-xs text-stone-500">No hay {tipo.toLowerCase()}s disponibles</div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
+            {/* Exámenes y pruebas de laboratorio */}
+            <div>
+              <label className="text-sm font-medium text-stone-700 mb-2 block">
+                Exámenes y pruebas de laboratorio
+              </label>
+              <textarea
+                className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none"
+                rows={4}
+                placeholder="Ingrese los exámenes y pruebas de laboratorio solicitadas (uno por línea o separados por comas)..."
+                value={Array.isArray(form.remision_a.examenes_laboratorio) 
+                  ? form.remision_a.examenes_laboratorio.join('\n')
+                  : (typeof form.remision_a.examenes_laboratorio === 'string' ? form.remision_a.examenes_laboratorio : '')}
+                onChange={(e) => {
+                  const examenes = e.target.value.split('\n').map(line => line.trim()).filter(line => line);
+                  handleExamenesChange(examenes);
+                }}
+              />
+            </div>
+
             <div className="flex gap-3 pt-4">
-              <ResponsiveButton variant="secondary" onClick={() => setShowForm(false)}>
+              <ResponsiveButton variant="secondary" onClick={handleCancelForm}>
                 Cancelar
               </ResponsiveButton>
               <ResponsiveButton onClick={handleSaveDemanda}>
@@ -2719,20 +4250,66 @@ function DemandasInducidasView({ paciente, familia, onBack }: any) {
                   </div>
                 )}
                 
-                {demanda.remision_a && demanda.remision_a.length > 0 && (
-                  <div className="mb-2">
-                    <div className="text-xs text-stone-500 mb-1">Remisión a:</div>
-                    <div className="text-sm text-stone-700">
-                      {demanda.remision_a.join(', ')}
-                    </div>
-                  </div>
-                )}
-                
-                {demanda.asignado_a_nombre && (
-                  <div className="text-xs text-stone-500">
-                    Asignado a: {demanda.asignado_a_nombre}
-                  </div>
-                )}
+                {(() => {
+                  let remisionData = demanda.remision_a;
+                  // Si viene como string JSON, parsearlo
+                  if (typeof remisionData === 'string') {
+                    try {
+                      remisionData = JSON.parse(remisionData);
+                    } catch (e) {
+                      // Si no es JSON válido, tratar como array simple (formato antiguo)
+                      try {
+                        remisionData = typeof demanda.remision_a === 'string' 
+                          ? JSON.parse(demanda.remision_a) 
+                          : demanda.remision_a;
+                      } catch (e2) {
+                        remisionData = { profesionales: [], examenes_laboratorio: [] };
+                      }
+                    }
+                  }
+                  
+                  const profesionales = remisionData?.profesionales || [];
+                  const examenes = remisionData?.examenes_laboratorio || [];
+                  const remisionSimple = Array.isArray(remisionData) ? remisionData : [];
+                  
+                  return (
+                    <>
+                      {profesionales.length > 0 && (
+                        <div className="mb-2">
+                          <div className="text-xs text-stone-500 mb-1">Profesionales asignados:</div>
+                          <div className="text-sm text-stone-700">
+                            {profesionales.map((p: any) => (
+                              <div key={p.profesional_id}>
+                                {p.tipo}: {p.nombre}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {examenes.length > 0 && (
+                        <div className="mb-2">
+                          <div className="text-xs text-stone-500 mb-1">Exámenes de laboratorio:</div>
+                          <div className="text-sm text-stone-700">
+                            {Array.isArray(examenes) ? examenes.join(', ') : examenes}
+                          </div>
+                        </div>
+                      )}
+                      {remisionSimple.length > 0 && profesionales.length === 0 && (
+                        <div className="mb-2">
+                          <div className="text-xs text-stone-500 mb-1">Remisión a:</div>
+                          <div className="text-sm text-stone-700">
+                            {remisionSimple.join(', ')}
+                          </div>
+                        </div>
+                      )}
+                      {demanda.asignado_a_nombre && (
+                        <div className="text-xs text-stone-500">
+                          Asignado a: {demanda.asignado_a_nombre}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             ))}
           </div>
@@ -2791,7 +4368,7 @@ export default function App() {
 
   // Usar el rol del usuario autenticado
   const userRole = user?.role || currentRole;
-  const roleConfig = USER_ROLES[userRole as keyof typeof USER_ROLES];
+  const roleConfig = USER_ROLES[userRole as keyof typeof USER_ROLES] || USER_ROLES['medico'];
   const RoleIcon = roleConfig.icon;
 
   const renderPage = () => {
@@ -2824,7 +4401,7 @@ export default function App() {
 
     switch (currentPage) {
       case "inicio":
-        return <InicioView currentRole={userRole} deviceType={deviceType} />;
+        return <InicioView currentRole={userRole} deviceType={deviceType} onNavigate={(page: string) => setCurrentPage(page)} />;
       case "crear-familia":
         return <CrearFamiliaView deviceType={deviceType} />;
       case "familias":
@@ -2876,9 +4453,26 @@ export default function App() {
       case "consultas-asignadas":
       case "terapias-asignadas":
         return <ConsultasAsignadasView deviceType={deviceType} />;
+      case "consultas-realizadas":
+        return <ConsultasRealizadasView deviceType={deviceType} />;
+      case "bitacora":
+        return <BitacoraView deviceType={deviceType} />;
       case "bd-pacientes":
       case "bd-pacientes-agregada":
-        return <BDPacientesView deviceType={deviceType} />;
+        return <BDPacientesView 
+          deviceType={deviceType} 
+          onSelectPaciente={(paciente: any, familia: any) => {
+            setSelectedPaciente(paciente);
+            setSelectedFamilia(familia);
+            setCurrentPage("paciente-detalle");
+          }}
+        />;
+      case "dashboard-epidemio":
+        return <DashboardEpidemioView deviceType={deviceType} />;
+      case "configuracion":
+        return <ConfiguracionView deviceType={deviceType} />;
+      case "ayuda":
+        return <AyudaView deviceType={deviceType} />;
       default:
         return (
           <ResponsiveCard>

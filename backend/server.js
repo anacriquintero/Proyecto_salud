@@ -99,6 +99,32 @@ app.get('/api/familias', (req, res) => {
   });
 });
 
+// Obtener una familia por ID
+app.get('/api/familias/:id', (req, res) => {
+  const { id } = req.params;
+  
+  const query = `
+    SELECT 
+      f.familia_id, f.apellido_principal, f.direccion, 
+      f.barrio_vereda, f.municipio, f.telefono_contacto,
+      u.nombre_completo as creado_por
+    FROM Familias f 
+    LEFT JOIN Usuarios u ON f.creado_por_uid = u.usuario_id
+    WHERE f.familia_id = ?
+  `;
+  
+  db.get(query, [id], (err, row) => {
+    if (err) {
+      console.error('Error obteniendo familia:', err);
+      return res.status(500).json({ error: err.message });
+    }
+    if (!row) {
+      return res.status(404).json({ error: 'Familia no encontrada' });
+    }
+    res.json(row);
+  });
+});
+
 // Obtener pacientes por familia
 app.get('/api/familias/:id/pacientes', (req, res) => {
   const { id } = req.params;
@@ -115,6 +141,55 @@ app.get('/api/familias/:id/pacientes', (req, res) => {
   db.all(query, [id], (err, rows) => {
     if (err) {
       return res.status(500).json({ error: err.message });
+    }
+    res.json(rows);
+  });
+});
+
+// Búsqueda de pacientes por documento, nombre o familia
+app.get('/api/pacientes/buscar', (req, res) => {
+  const { q } = req.query;
+  
+  if (!q || q.trim().length === 0) {
+    return res.status(400).json({ error: 'Parámetro de búsqueda requerido (q)' });
+  }
+  
+  const searchTerm = `%${q.trim()}%`;
+  
+  const query = `
+    SELECT 
+      p.paciente_id,
+      p.numero_documento,
+      p.tipo_documento,
+      p.primer_nombre,
+      p.segundo_nombre,
+      p.primer_apellido,
+      p.segundo_apellido,
+      p.fecha_nacimiento,
+      p.genero,
+      p.telefono,
+      p.email,
+      f.familia_id,
+      f.apellido_principal as familia_apellido,
+      f.municipio as familia_municipio
+    FROM Pacientes p
+    JOIN Familias f ON p.familia_id = f.familia_id
+    WHERE p.activo = 1 AND (
+      p.numero_documento LIKE ? OR
+      p.primer_nombre LIKE ? OR
+      p.segundo_nombre LIKE ? OR
+      p.primer_apellido LIKE ? OR
+      p.segundo_apellido LIKE ? OR
+      f.apellido_principal LIKE ?
+    )
+    ORDER BY p.primer_apellido, p.primer_nombre
+    LIMIT 50
+  `;
+  
+  db.all(query, [searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm], (err, rows) => {
+    if (err) {
+      console.error('Error en búsqueda de pacientes:', err);
+      return res.status(500).json({ error: 'Error del servidor' });
     }
     res.json(rows);
   });
@@ -228,25 +303,123 @@ app.post('/api/familias', (req, res) => {
 app.get('/api/usuarios/rol/:rol', (req, res) => {
   const { rol } = req.params;
   
+  // Query simplificada que no requiere Equipos_Basicos
   const query = `
-    SELECT u.usuario_id, u.nombre_completo, u.email, u.telefono,
-           e.nombre_equipo, e.zona_cobertura
+    SELECT u.usuario_id, u.nombre_completo, u.email, u.telefono
     FROM Usuarios u
     JOIN Roles r ON u.rol_id = r.rol_id
-    LEFT JOIN Equipos_Basicos e ON u.equipo_id = e.equipo_id
     WHERE r.nombre_rol = ? AND u.activo = 1
+    ORDER BY u.nombre_completo
   `;
   
   db.all(query, [rol], (err, rows) => {
     if (err) {
-      return res.status(500).json({ error: err.message });
+      console.error('Error obteniendo usuarios por rol:', err);
+      return res.status(500).json({ error: 'Error obteniendo usuarios por rol: ' + err.message });
     }
-    res.json(rows);
+    res.json(rows || []);
   });
 });
 
 
 // ==================== ENDPOINTS DE HC_MEDICINA_GENERAL ====================
+
+// Crear nueva atención y historia clínica
+app.post('/api/hc/medicina', (req, res) => {
+  const {
+    paciente_id,
+    usuario_id,
+    fecha_atencion,
+    motivo_consulta,
+    enfermedad_actual,
+    antecedentes_personales,
+    antecedentes_familiares,
+    revision_por_sistemas,
+    signos_vitales,
+    habitos_toxicos,
+    examen_fisico,
+    diagnosticos_cie10,
+    plan_manejo,
+    recomendaciones,
+    proxima_cita
+  } = req.body;
+
+  if (!paciente_id || !usuario_id || !motivo_consulta || !diagnosticos_cie10) {
+    return res.status(400).json({
+      error: 'Faltan campos obligatorios: paciente_id, usuario_id, motivo_consulta, diagnosticos_cie10'
+    });
+  }
+
+  // Iniciar transacción
+  db.serialize(() => {
+    // 1. Crear atención clínica
+    const insertAtencion = `
+      INSERT INTO Atenciones_Clinicas (
+        paciente_id, usuario_id, fecha_atencion, tipo_atencion, estado
+      ) VALUES (?, ?, ?, ?, ?)
+    `;
+
+    const fechaAtencion = fecha_atencion || new Date().toISOString().split('T')[0];
+
+    db.run(insertAtencion, [
+      paciente_id,
+      usuario_id,
+      fechaAtencion,
+      'Consulta Médica',
+      'En proceso'
+    ], function(err) {
+      if (err) {
+        console.error('Error creando atención:', err);
+        console.error('Mensaje:', err.message);
+        console.error('Código:', err.code);
+        return res.status(500).json({ error: 'Error creando atención clínica: ' + err.message });
+      }
+
+      const atencionId = this.lastID;
+
+      // 2. Crear historia clínica asociada
+      const insertHC = `
+        INSERT INTO HC_Medicina_General (
+          atencion_id, motivo_consulta, enfermedad_actual,
+          antecedentes_personales, antecedentes_familiares,
+          revision_por_sistemas, signos_vitales,
+          examen_fisico, diagnosticos_cie10, plan_manejo,
+          recomendaciones, proxima_cita
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `;
+
+      db.run(insertHC, [
+        atencionId,
+        motivo_consulta,
+        enfermedad_actual || null,
+        antecedentes_personales || null,
+        antecedentes_familiares || null,
+        revision_por_sistemas || null,
+        signos_vitales || null,
+        examen_fisico || null,
+        diagnosticos_cie10,
+        plan_manejo || null,
+        recomendaciones || null,
+        proxima_cita || null
+      ], function(err) {
+        if (err) {
+          console.error('Error creando HC Medicina:', err);
+          console.error('Mensaje:', err.message);
+          console.error('Código:', err.code);
+          // Rollback: eliminar atención creada
+          db.run('DELETE FROM Atenciones_Clinicas WHERE atencion_id = ?', [atencionId]);
+          return res.status(500).json({ error: 'Error creando historia clínica: ' + err.message });
+        }
+
+        res.status(201).json({
+          success: true,
+          atencion_id: atencionId,
+          message: 'Atención y historia clínica creadas exitosamente'
+        });
+      });
+    });
+  });
+});
 
 // Obtener historia clínica de medicina general
 app.get('/api/hc/medicina/:atencion_id', (req, res) => {
@@ -256,10 +429,10 @@ app.get('/api/hc/medicina/:atencion_id', (req, res) => {
     SELECT 
       atencion_id, motivo_consulta, enfermedad_actual,
       antecedentes_personales, antecedentes_familiares,
-      revision_por_sistemas, signos_vitales, habitos_toxicos, 
+      revision_por_sistemas, signos_vitales,
       examen_fisico, diagnosticos_cie10, plan_manejo, 
       recomendaciones, proxima_cita
-    FROM HC_Medicina_General 
+    FROM HC_Medicina_General
     WHERE atencion_id = ?
   `;
   
@@ -375,7 +548,7 @@ app.put('/api/hc/medicina/:atencion_id', (req, res) => {
   const {
     motivo_consulta, enfermedad_actual,
     antecedentes_personales, antecedentes_familiares,
-    revision_por_sistemas, signos_vitales, habitos_toxicos,
+    revision_por_sistemas, signos_vitales,
     examen_fisico, diagnosticos_cie10, plan_manejo, 
     recomendaciones, proxima_cita
   } = req.body;
@@ -384,7 +557,7 @@ app.put('/api/hc/medicina/:atencion_id', (req, res) => {
     UPDATE HC_Medicina_General SET
       motivo_consulta = ?, enfermedad_actual = ?,
       antecedentes_personales = ?, antecedentes_familiares = ?,
-      revision_por_sistemas = ?, signos_vitales = ?, habitos_toxicos = ?,
+      revision_por_sistemas = ?, signos_vitales = ?,
       examen_fisico = ?, diagnosticos_cie10 = ?,
       plan_manejo = ?, recomendaciones = ?, proxima_cita = ?
     WHERE atencion_id = ?
@@ -393,7 +566,7 @@ app.put('/api/hc/medicina/:atencion_id', (req, res) => {
   const params = [
     motivo_consulta, enfermedad_actual,
     antecedentes_personales, antecedentes_familiares,
-    revision_por_sistemas, signos_vitales, habitos_toxicos,
+    revision_por_sistemas, signos_vitales,
     examen_fisico, diagnosticos_cie10, plan_manejo, 
     recomendaciones, proxima_cita, atencion_id
   ];
@@ -409,6 +582,31 @@ app.put('/api/hc/medicina/:atencion_id', (req, res) => {
     res.json({ 
       success: true, 
       message: 'Historia clínica actualizada exitosamente' 
+    });
+  });
+});
+
+// Marcar atención como completada
+app.put('/api/atenciones/:id/completar', (req, res) => {
+  const { id } = req.params;
+  
+  const query = `
+    UPDATE Atenciones_Clinicas 
+    SET estado = 'Completada'
+    WHERE atencion_id = ?
+  `;
+  
+  db.run(query, [id], function(err) {
+    if (err) {
+      console.error('Error completando atención:', err);
+      return res.status(500).json({ error: 'Error completando atención' });
+    }
+    if (this.changes === 0) {
+      return res.status(404).json({ error: 'Atención no encontrada' });
+    }
+    res.json({ 
+      success: true, 
+      message: 'Atención marcada como completada' 
     });
   });
 });
@@ -436,6 +634,119 @@ app.get('/api/pacientes/:paciente_id/hc/medicina', (req, res) => {
       return res.status(500).json({ error: 'Error del servidor' });
     }
     res.json(rows);
+  });
+});
+
+// Obtener historias clínicas completadas por un médico/usuario
+app.get('/api/usuarios/:id/hc-completadas', (req, res) => {
+  const { id } = req.params;
+  const { desde, hasta } = req.query;
+  
+  let query = `
+    SELECT 
+      hc.atencion_id,
+      hc.motivo_consulta,
+      hc.diagnosticos_cie10,
+      hc.plan_manejo,
+      ac.fecha_atencion,
+      ac.estado,
+      p.paciente_id,
+      p.primer_nombre,
+      p.segundo_nombre,
+      p.primer_apellido,
+      p.segundo_apellido,
+      p.numero_documento,
+      p.tipo_documento,
+      f.apellido_principal as familia_apellido
+    FROM HC_Medicina_General hc
+    JOIN Atenciones_Clinicas ac ON hc.atencion_id = ac.atencion_id
+    JOIN Pacientes p ON ac.paciente_id = p.paciente_id
+    JOIN Familias f ON p.familia_id = f.familia_id
+    WHERE ac.usuario_id = ? AND ac.estado = 'Completada'
+  `;
+  
+  const params = [id];
+  
+  if (desde) {
+    query += ' AND ac.fecha_atencion >= ?';
+    params.push(desde);
+  }
+  
+  if (hasta) {
+    query += ' AND ac.fecha_atencion <= ?';
+    params.push(hasta);
+  }
+  
+  query += ' ORDER BY ac.fecha_atencion DESC';
+  
+  db.all(query, params, (err, rows) => {
+    if (err) {
+      console.error('Error obteniendo HC completadas:', err);
+      return res.status(500).json({ error: 'Error del servidor' });
+    }
+    res.json(rows);
+  });
+});
+
+// Obtener bitácora mensual de actividades del médico
+app.get('/api/usuarios/:id/bitacora', (req, res) => {
+  const { id } = req.params;
+  const { mes, ano } = req.query;
+  
+  // Calcular rango de fechas si se proporciona mes y año
+  let fechaInicio, fechaFin;
+  if (mes && ano) {
+    fechaInicio = `${ano}-${String(mes).padStart(2, '0')}-01`;
+    const nextMonth = parseInt(mes) === 12 ? 1 : parseInt(mes) + 1;
+    const nextYear = parseInt(mes) === 12 ? parseInt(ano) + 1 : parseInt(ano);
+    fechaFin = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`;
+  }
+  
+  let query = `
+    SELECT 
+      DATE(ac.fecha_atencion) as fecha,
+      COUNT(DISTINCT ac.atencion_id) as total_consultas,
+      COUNT(DISTINCT rm.receta_id) as total_recetas,
+      COUNT(DISTINCT ol.orden_id) as total_ordenes
+    FROM Atenciones_Clinicas ac
+    LEFT JOIN Recetas_Medicas rm ON ac.atencion_id = rm.atencion_id
+    LEFT JOIN Ordenes_Laboratorio ol ON ac.atencion_id = ol.atencion_id
+    WHERE ac.usuario_id = ?
+  `;
+  
+  const params = [id];
+  
+  if (fechaInicio) {
+    query += ' AND ac.fecha_atencion >= ?';
+    params.push(fechaInicio);
+  }
+  
+  if (fechaFin) {
+    query += ' AND ac.fecha_atencion < ?';
+    params.push(fechaFin);
+  }
+  
+  query += `
+    GROUP BY DATE(ac.fecha_atencion)
+    ORDER BY fecha DESC
+  `;
+  
+  db.all(query, params, (err, rows) => {
+    if (err) {
+      console.error('Error obteniendo bitácora:', err);
+      return res.status(500).json({ error: 'Error del servidor' });
+    }
+    
+    // Calcular totales del mes
+    const resumen = {
+      total_consultas: rows.reduce((sum, row) => sum + row.total_consultas, 0),
+      total_recetas: rows.reduce((sum, row) => sum + row.total_recetas, 0),
+      total_ordenes: rows.reduce((sum, row) => sum + row.total_ordenes, 0),
+      dias_activos: rows.length,
+      detalle_diario: rows
+    };
+    
+    res.json(resumen);
   });
 });
 
@@ -696,11 +1007,23 @@ app.get('/api/pacientes/:id/planes-cuidado', (req, res) => {
       return res.status(500).json({ error: 'Error obteniendo planes de cuidado' });
     }
     
-    // Procesar campos JSON
-    const planesProcesados = rows.map(plan => ({
-      ...plan,
-      plan_asociado: plan.plan_asociado ? JSON.parse(plan.plan_asociado) : []
-    }));
+    // Procesar campos JSON de forma segura
+    const planesProcesados = rows.map(plan => {
+      let planAsociado = [];
+      try {
+        if (plan.plan_asociado && plan.plan_asociado.trim() !== '') {
+          planAsociado = JSON.parse(plan.plan_asociado);
+        }
+      } catch (parseErr) {
+        console.error('Error parseando plan_asociado:', parseErr);
+        planAsociado = [];
+      }
+      
+      return {
+        ...plan,
+        plan_asociado: planAsociado
+      };
+    });
     
     res.json(planesProcesados);
   });
@@ -723,46 +1046,73 @@ app.post('/api/planes-cuidado', (req, res) => {
     fecha_aceptacion
   } = req.body;
   
-  if (!familia_id || !paciente_principal_id || !fecha_entrega || !creado_por_uid) {
+  if (!paciente_principal_id || !fecha_entrega || !creado_por_uid) {
     return res.status(400).json({
-      error: 'Faltan campos obligatorios: familia_id, paciente_principal_id, fecha_entrega, creado_por_uid'
+      error: 'Faltan campos obligatorios: paciente_principal_id, fecha_entrega, creado_por_uid'
     });
   }
   
+  // Si no se proporciona familia_id, obtenerlo del paciente
+  const obtenerFamiliaId = (pacienteId) => {
+    return new Promise((resolve, reject) => {
+      if (familia_id) {
+        resolve(familia_id);
+        return;
+      }
+      
+      db.get('SELECT familia_id FROM Pacientes WHERE paciente_id = ?', [pacienteId], (err, row) => {
+        if (err) {
+          reject(err);
+        } else if (!row) {
+          reject(new Error('Paciente no encontrado'));
+        } else {
+          resolve(row.familia_id);
+        }
+      });
+    });
+  };
+  
+  obtenerFamiliaId(paciente_principal_id).then(familiaId => {
+  
   const insert = `
     INSERT INTO Planes_Cuidado_Familiar (
-      familia_id, paciente_principal_id, fecha_entrega, plan_asociado,
+      familia_id, paciente_id, paciente_principal_id, fecha_entrega, plan_asociado,
       condicion_identificada, logro_salud, cuidados_salud, demandas_inducidas_desc,
       educacion_salud, estado, creado_por_uid, fecha_aceptacion
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `;
   
-  const params = [
-    familia_id,
-    paciente_principal_id,
-    fecha_entrega,
-    JSON.stringify(plan_asociado || []),
-    condicion_identificada || null,
-    logro_salud || null,
-    cuidados_salud || null,
-    demandas_inducidas_desc || null,
-    educacion_salud || null,
-    estado || 'Activo',
-    creado_por_uid,
-    fecha_aceptacion || null
-  ];
-  
-  db.run(insert, params, function(err) {
-    if (err) {
-      console.error('Error creando plan de cuidado:', err);
-      return res.status(500).json({ error: 'Error creando plan de cuidado' });
-    }
+    const params = [
+      familiaId,
+      paciente_principal_id, // También para paciente_id (mantener compatibilidad)
+      paciente_principal_id,
+      fecha_entrega,
+      JSON.stringify(plan_asociado || []),
+      condicion_identificada || null,
+      logro_salud || null,
+      cuidados_salud || null,
+      demandas_inducidas_desc || null,
+      educacion_salud || null,
+      estado || 'Activo',
+      creado_por_uid,
+      fecha_aceptacion || null
+    ];
     
-    res.status(201).json({
-      success: true,
-      plan_id: this.lastID,
-      message: 'Plan de cuidado creado exitosamente'
+    db.run(insert, params, function(err) {
+      if (err) {
+        console.error('Error creando plan de cuidado:', err);
+        return res.status(500).json({ error: 'Error creando plan de cuidado: ' + err.message });
+      }
+      
+      res.status(201).json({
+        success: true,
+        plan_id: this.lastID,
+        message: 'Plan de cuidado creado exitosamente'
+      });
     });
+  }).catch(err => {
+    console.error('Error obteniendo familia_id:', err);
+    return res.status(500).json({ error: 'Error obteniendo familia del paciente: ' + err.message });
   });
 });
 
@@ -789,22 +1139,63 @@ app.get('/api/pacientes/:id/demandas-inducidas', (req, res) => {
   db.all(query, [id], (err, rows) => {
     if (err) {
       console.error('Error obteniendo demandas inducidas:', err);
-      return res.status(500).json({ error: 'Error obteniendo demandas inducidas' });
+      return res.status(500).json({ error: 'Error obteniendo demandas inducidas: ' + err.message });
     }
     
-    // Procesar campos JSON
-    const demandasProcesadas = rows.map(demanda => ({
-      ...demanda,
-      diligenciamiento: demanda.diligenciamiento ? JSON.parse(demanda.diligenciamiento) : [],
-      remision_a: demanda.remision_a ? JSON.parse(demanda.remision_a) : [],
-      seguimiento: demanda.seguimiento ? JSON.parse(demanda.seguimiento) : {}
-    }));
+    // Procesar campos JSON de forma segura
+    const demandasProcesadas = rows.map(demanda => {
+      let diligenciamiento = [];
+      let remision_a = {};
+      let seguimiento = {};
+      
+      try {
+        if (demanda.diligenciamiento && demanda.diligenciamiento.trim() !== '') {
+          diligenciamiento = JSON.parse(demanda.diligenciamiento);
+        }
+      } catch (e) {
+        console.error('Error parseando diligenciamiento:', e);
+        diligenciamiento = [];
+      }
+      
+      try {
+        if (demanda.remision_a && demanda.remision_a.trim() !== '') {
+          const parsed = JSON.parse(demanda.remision_a);
+          // Si es un array (formato antiguo), mantenerlo
+          // Si es un objeto (formato nuevo), usarlo
+          remision_a = Array.isArray(parsed) ? parsed : parsed;
+        }
+      } catch (e) {
+        console.error('Error parseando remision_a:', e);
+        remision_a = {};
+      }
+      
+      try {
+        if (demanda.seguimiento && demanda.seguimiento.trim() !== '') {
+          seguimiento = JSON.parse(demanda.seguimiento);
+        }
+      } catch (e) {
+        console.error('Error parseando seguimiento:', e);
+        seguimiento = {};
+      }
+      
+      return {
+        ...demanda,
+        diligenciamiento,
+        remision_a,
+        seguimiento
+      };
+    });
     
     res.json(demandasProcesadas);
   });
 });
 
 // Crear nueva demanda inducida
+// Las demandas inducidas son independientes y pueden:
+// - Ser creadas por médicos después de una HC
+// - Ser creadas por auxiliares después de caracterización o plan de cuidado
+// - Asociarse a múltiples profesionales del equipo básico
+// - plan_id es opcional (solo si está asociada a un plan de cuidado)
 app.post('/api/demandas-inducidas', (req, res) => {
   const {
     numero_formulario,
@@ -825,6 +1216,18 @@ app.post('/api/demandas-inducidas', (req, res) => {
     });
   }
   
+  // Procesar remision_a: puede venir como objeto (formato nuevo con múltiples profesionales)
+  // o como string JSON
+  let remisionData = remision_a;
+  if (typeof remision_a === 'string' && remision_a.trim() !== '') {
+    try {
+      remisionData = JSON.parse(remision_a);
+    } catch (e) {
+      console.error('Error parseando remision_a:', e);
+      remisionData = {};
+    }
+  }
+  
   const insert = `
     INSERT INTO Demandas_Inducidas (
       numero_formulario, paciente_id, plan_id, fecha_demanda, diligenciamiento,
@@ -838,7 +1241,7 @@ app.post('/api/demandas-inducidas', (req, res) => {
     plan_id || null,
     fecha_demanda,
     JSON.stringify(diligenciamiento || []),
-    JSON.stringify(remision_a || []),
+    JSON.stringify(remisionData || {}),
     estado || 'Pendiente',
     asignado_a_uid || null,
     solicitado_por_uid,
@@ -848,7 +1251,8 @@ app.post('/api/demandas-inducidas', (req, res) => {
   db.run(insert, params, function(err) {
     if (err) {
       console.error('Error creando demanda inducida:', err);
-      return res.status(500).json({ error: 'Error creando demanda inducida' });
+      console.error('Params:', params);
+      return res.status(500).json({ error: 'Error creando demanda inducida: ' + err.message });
     }
     
     res.status(201).json({
@@ -859,17 +1263,22 @@ app.post('/api/demandas-inducidas', (req, res) => {
   });
 });
 
-// Obtener demandas asignadas a un profesional - ENDPOINT TEMPORAL
+// Obtener demandas asignadas a un profesional
+// Busca demandas donde el usuario esté asignado directamente o en la lista de profesionales
 app.get('/api/usuarios/:id/demandas-asignadas', (req, res) => {
   const { id } = req.params;
+  const usuarioId = parseInt(id);
   
-  console.log(`🔍 Obteniendo demandas para usuario ID: ${id}`);
+  console.log(`🔍 Obteniendo demandas para usuario ID: ${usuarioId}`);
   
-  // Query para la estructura correcta de la base de datos
+  // Obtener todas las demandas activas y filtrarlas en JavaScript
+  // porque necesitamos buscar dentro de JSON (remision_a.profesionales)
   const query = `
     SELECT 
       di.demanda_id,
       di.plan_id,
+      di.numero_formulario,
+      di.fecha_demanda,
       di.tipo_demanda,
       di.descripcion,
       di.prioridad,
@@ -879,35 +1288,81 @@ app.get('/api/usuarios/:id/demandas-asignadas', (req, res) => {
       di.paciente_id,
       di.fecha_asignacion,
       di.creado_por_uid,
+      di.asignado_a_uid,
       di.profesional_asignado,
       di.observaciones,
+      di.diligenciamiento,
+      di.remision_a,
+      di.seguimiento,
+      di.solicitado_por_uid,
       p.primer_nombre,
       p.primer_apellido,
+      p.segundo_nombre,
+      p.segundo_apellido,
       p.numero_documento,
-      f.apellido_principal
+      p.fecha_nacimiento,
+      p.genero,
+      f.apellido_principal,
+      f.direccion,
+      f.municipio,
+      u.nombre_completo as solicitado_por_nombre
     FROM Demandas_Inducidas di
     JOIN Pacientes p ON di.paciente_id = p.paciente_id
     JOIN Familias f ON p.familia_id = f.familia_id
-    WHERE di.profesional_asignado = ? AND di.estado IN ('Pendiente', 'Asignada')
+    LEFT JOIN Usuarios u ON di.solicitado_por_uid = u.usuario_id
+    WHERE di.estado IN ('Pendiente', 'Asignada')
   `;
   
-  db.all(query, [id], (err, rows) => {
+  db.all(query, [], (err, rows) => {
     if (err) {
       console.error('❌ Error en query:', err.message);
       return res.status(500).json({ error: 'Error obteniendo demandas asignadas', details: err.message });
     }
     
-    console.log(`✅ Query exitoso: ${rows.length} demandas encontradas`);
+    console.log(`✅ Query base exitoso: ${rows.length} demandas activas encontradas`);
+    
+    // Filtrar demandas donde el usuario esté asignado
+    const demandasAsignadas = rows.filter(demanda => {
+      // Caso 1: Asignado directamente por asignado_a_uid
+      if (demanda.asignado_a_uid === usuarioId) {
+        return true;
+      }
+      
+      // Caso 2: Asignado en remision_a.profesionales[]
+      if (demanda.remision_a) {
+        try {
+          const remision = typeof demanda.remision_a === 'string' 
+            ? JSON.parse(demanda.remision_a) 
+            : demanda.remision_a;
+          
+          if (remision.profesionales && Array.isArray(remision.profesionales)) {
+            const estaAsignado = remision.profesionales.some(
+              (p) => p.profesional_id === usuarioId
+            );
+            if (estaAsignado) {
+              return true;
+            }
+          }
+        } catch (e) {
+          console.error('Error parseando remision_a en filtro:', e);
+        }
+      }
+      
+      return false;
+    });
+    
+    console.log(`🎯 Demandas asignadas al usuario ${usuarioId}: ${demandasAsignadas.length}`);
     
     // Procesar campos JSON de forma segura
-    const demandasProcesadas = rows.map(demanda => {
+    const demandasProcesadas = demandasAsignadas.map(demanda => {
       try {
         return {
           ...demanda,
+          fecha_demanda: demanda.fecha_demanda || demanda.fecha_creacion,
           diligenciamiento: demanda.diligenciamiento ? 
             (typeof demanda.diligenciamiento === 'string' ? JSON.parse(demanda.diligenciamiento) : demanda.diligenciamiento) : [],
           remision_a: demanda.remision_a ? 
-            (typeof demanda.remision_a === 'string' ? JSON.parse(demanda.remision_a) : demanda.remision_a) : [],
+            (typeof demanda.remision_a === 'string' ? JSON.parse(demanda.remision_a) : demanda.remision_a) : {},
           seguimiento: demanda.seguimiento ? 
             (typeof demanda.seguimiento === 'string' ? JSON.parse(demanda.seguimiento) : demanda.seguimiento) : {}
         };
@@ -915,15 +1370,386 @@ app.get('/api/usuarios/:id/demandas-asignadas', (req, res) => {
         console.error('Error parseando JSON:', jsonErr);
         return {
           ...demanda,
+          fecha_demanda: demanda.fecha_demanda || demanda.fecha_creacion,
           diligenciamiento: [],
-          remision_a: [],
+          remision_a: {},
           seguimiento: {}
         };
       }
     });
     
-    console.log(`🎯 Devolviendo ${demandasProcesadas.length} demandas procesadas`);
+    console.log(`✅ Devolviendo ${demandasProcesadas.length} demandas procesadas`);
     res.json(demandasProcesadas);
+  });
+});
+
+// ==================== ENDPOINTS DE RECETAS MÉDICAS ====================
+
+// Obtener recetas de un paciente
+app.get('/api/pacientes/:id/recetas', (req, res) => {
+  const { id } = req.params;
+  
+  const query = `
+    SELECT 
+      rm.receta_id,
+      rm.atencion_id,
+      rm.fecha_receta,
+      rm.medicamentos,
+      rm.indicaciones,
+      rm.estado,
+      rm.fecha_impresion,
+      ac.fecha_atencion,
+      u.nombre_completo as medico_nombre
+    FROM Recetas_Medicas rm
+    JOIN Atenciones_Clinicas ac ON rm.atencion_id = ac.atencion_id
+    JOIN Usuarios u ON rm.usuario_id = u.usuario_id
+    WHERE rm.paciente_id = ?
+    ORDER BY rm.fecha_receta DESC
+  `;
+  
+  db.all(query, [id], (err, rows) => {
+    if (err) {
+      console.error('Error obteniendo recetas:', err);
+      return res.status(500).json({ error: 'Error del servidor' });
+    }
+    
+    // Procesar JSON de medicamentos
+    const recetas = rows.map(receta => {
+      let medicamentos = [];
+      if (receta.medicamentos) {
+        try {
+          medicamentos = typeof receta.medicamentos === 'string' 
+            ? JSON.parse(receta.medicamentos) 
+            : receta.medicamentos;
+        } catch (e) {
+          console.error('Error parseando medicamentos:', e);
+        }
+      }
+      return {
+        ...receta,
+        medicamentos
+      };
+    });
+    
+    res.json(recetas);
+  });
+});
+
+// Crear nueva receta médica
+app.post('/api/recetas', (req, res) => {
+  const {
+    atencion_id,
+    paciente_id,
+    usuario_id,
+    fecha_receta,
+    medicamentos,
+    indicaciones,
+    estado
+  } = req.body;
+
+  if (!atencion_id || !paciente_id || !usuario_id || !medicamentos) {
+    return res.status(400).json({
+      error: 'Faltan campos obligatorios: atencion_id, paciente_id, usuario_id, medicamentos'
+    });
+  }
+
+  const insert = `
+    INSERT INTO Recetas_Medicas (
+      atencion_id, paciente_id, usuario_id, fecha_receta,
+      medicamentos, indicaciones, estado
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `;
+
+  const fechaReceta = fecha_receta || new Date().toISOString().split('T')[0];
+  const medicamentosJSON = typeof medicamentos === 'string' 
+    ? medicamentos 
+    : JSON.stringify(medicamentos);
+
+  db.run(insert, [
+    atencion_id,
+    paciente_id,
+    usuario_id,
+    fechaReceta,
+    medicamentosJSON,
+    indicaciones || null,
+    estado || 'Activa'
+  ], function(err) {
+    if (err) {
+      console.error('Error creando receta:', err);
+      return res.status(500).json({ error: 'Error creando receta médica' });
+    }
+
+    res.status(201).json({
+      success: true,
+      receta_id: this.lastID,
+      message: 'Receta creada exitosamente'
+    });
+  });
+});
+
+// Marcar receta como impresa
+app.put('/api/recetas/:id/imprimir', (req, res) => {
+  const { id } = req.params;
+  
+  db.run(
+    'UPDATE Recetas_Medicas SET fecha_impresion = CURRENT_TIMESTAMP WHERE receta_id = ?',
+    [id],
+    function(err) {
+      if (err) {
+        console.error('Error actualizando receta:', err);
+        return res.status(500).json({ error: 'Error del servidor' });
+      }
+      res.json({ success: true, message: 'Receta marcada como impresa' });
+    }
+  );
+});
+
+// ==================== ENDPOINTS DE ÓRDENES DE LABORATORIO ====================
+
+// Obtener órdenes de laboratorio de un paciente
+app.get('/api/pacientes/:id/ordenes-laboratorio', (req, res) => {
+  const { id } = req.params;
+  
+  const query = `
+    SELECT 
+      ol.orden_id,
+      ol.atencion_id,
+      ol.fecha_orden,
+      ol.examenes,
+      ol.indicaciones_clinicas,
+      ol.estado,
+      ol.fecha_impresion,
+      ac.fecha_atencion,
+      u.nombre_completo as medico_nombre
+    FROM Ordenes_Laboratorio ol
+    JOIN Atenciones_Clinicas ac ON ol.atencion_id = ac.atencion_id
+    JOIN Usuarios u ON ol.usuario_id = u.usuario_id
+    WHERE ol.paciente_id = ?
+    ORDER BY ol.fecha_orden DESC
+  `;
+  
+  db.all(query, [id], (err, rows) => {
+    if (err) {
+      console.error('Error obteniendo órdenes de laboratorio:', err);
+      return res.status(500).json({ error: 'Error del servidor' });
+    }
+    
+    // Procesar JSON de exámenes
+    const ordenes = rows.map(orden => {
+      let examenes = [];
+      if (orden.examenes) {
+        try {
+          examenes = typeof orden.examenes === 'string' 
+            ? JSON.parse(orden.examenes) 
+            : orden.examenes;
+        } catch (e) {
+          console.error('Error parseando examenes:', e);
+        }
+      }
+      return {
+        ...orden,
+        examenes
+      };
+    });
+    
+    res.json(ordenes);
+  });
+});
+
+// Crear nueva orden de laboratorio
+app.post('/api/ordenes-laboratorio', (req, res) => {
+  const {
+    atencion_id,
+    paciente_id,
+    usuario_id,
+    fecha_orden,
+    examenes,
+    indicaciones_clinicas,
+    estado
+  } = req.body;
+
+  if (!atencion_id || !paciente_id || !usuario_id || !examenes) {
+    return res.status(400).json({
+      error: 'Faltan campos obligatorios: atencion_id, paciente_id, usuario_id, examenes'
+    });
+  }
+
+  const insert = `
+    INSERT INTO Ordenes_Laboratorio (
+      atencion_id, paciente_id, usuario_id, fecha_orden,
+      examenes, indicaciones_clinicas, estado
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `;
+
+  const fechaOrden = fecha_orden || new Date().toISOString().split('T')[0];
+  const examenesJSON = typeof examenes === 'string' 
+    ? examenes 
+    : JSON.stringify(examenes);
+
+  db.run(insert, [
+    atencion_id,
+    paciente_id,
+    usuario_id,
+    fechaOrden,
+    examenesJSON,
+    indicaciones_clinicas || null,
+    estado || 'Pendiente'
+  ], function(err) {
+    if (err) {
+      console.error('Error creando orden de laboratorio:', err);
+      return res.status(500).json({ error: 'Error creando orden de laboratorio' });
+    }
+
+    res.status(201).json({
+      success: true,
+      orden_id: this.lastID,
+      message: 'Orden de laboratorio creada exitosamente'
+    });
+  });
+});
+
+// Marcar orden como impresa
+app.put('/api/ordenes-laboratorio/:id/imprimir', (req, res) => {
+  const { id } = req.params;
+  
+  db.run(
+    'UPDATE Ordenes_Laboratorio SET fecha_impresion = CURRENT_TIMESTAMP WHERE orden_id = ?',
+    [id],
+    function(err) {
+      if (err) {
+        console.error('Error actualizando orden:', err);
+        return res.status(500).json({ error: 'Error del servidor' });
+      }
+      res.json({ success: true, message: 'Orden marcada como impresa' });
+    }
+  );
+});
+
+// ==================== ENDPOINTS DE DASHBOARD ====================
+
+// Resumen de actividad para el médico/usuario
+app.get('/api/usuarios/:id/resumen-actividad', (req, res) => {
+  const { id } = req.params;
+  const hoy = new Date().toISOString().split('T')[0];
+  
+  const queries = {
+    registrosHoy: `
+      SELECT COUNT(*) as total 
+      FROM Atenciones_Clinicas 
+      WHERE usuario_id = ? AND date(fecha_atencion) = ?
+    `,
+    consultasTotal: `
+      SELECT COUNT(*) as total 
+      FROM Atenciones_Clinicas 
+      WHERE usuario_id = ?
+    `,
+    caracterizaciones: `
+      SELECT COUNT(DISTINCT familia_id) as total 
+      FROM Familias 
+      WHERE fecha_caracterizacion IS NOT NULL
+    `,
+    demandasInducidas: `
+      SELECT COUNT(*) as total 
+      FROM Demandas_Inducidas 
+      WHERE asignado_a_uid = ? AND estado IN ('Pendiente', 'Asignada')
+    `
+  };
+
+  db.serialize(() => {
+    const resultados = {};
+    let queriesCompletadas = 0;
+    const totalQueries = Object.keys(queries).length;
+
+    const procesarResultado = (key, resultado) => {
+      resultados[key] = resultado;
+      queriesCompletadas++;
+      if (queriesCompletadas === totalQueries) {
+        res.json(resultados);
+      }
+    };
+
+    db.get(queries.registrosHoy, [id, hoy], (err, row) => {
+      if (err) console.error('Error en registrosHoy:', err);
+      procesarResultado('registros_hoy', (row && row.total) || 0);
+    });
+
+    db.get(queries.consultasTotal, [id], (err, row) => {
+      if (err) console.error('Error en consultasTotal:', err);
+      procesarResultado('consultas', (row && row.total) || 0);
+    });
+
+    db.get(queries.caracterizaciones, [], (err, row) => {
+      if (err) console.error('Error en caracterizaciones:', err);
+      procesarResultado('caracterizaciones', (row && row.total) || 0);
+    });
+
+    db.get(queries.demandasInducidas, [id], (err, row) => {
+      if (err) console.error('Error en demandasInducidas:', err);
+      procesarResultado('demandas_inducidas', (row && row.total) || 0);
+    });
+  });
+});
+
+// Dashboard epidemiológico
+app.get('/api/dashboard/epidemio', (req, res) => {
+  // Estadísticas generales para el dashboard epidemiológico
+  const queries = {
+    totalFamilias: 'SELECT COUNT(*) as total FROM Familias',
+    totalPacientes: 'SELECT COUNT(*) as total FROM Pacientes WHERE activo = 1',
+    totalAtenciones: 'SELECT COUNT(*) as total FROM Atenciones_Clinicas',
+    atencionesMes: `
+      SELECT COUNT(*) as total 
+      FROM Atenciones_Clinicas 
+      WHERE fecha_atencion >= date('now', 'start of month')
+    `,
+    diagnosticosFrecuentes: `
+      SELECT diagnosticos_cie10, COUNT(*) as frecuencia
+      FROM HC_Medicina_General
+      WHERE diagnosticos_cie10 IS NOT NULL AND diagnosticos_cie10 != ''
+      GROUP BY diagnosticos_cie10
+      ORDER BY frecuencia DESC
+      LIMIT 10
+    `
+  };
+
+  db.serialize(() => {
+    const resultados = {};
+    let queriesCompletadas = 0;
+    const totalQueries = Object.keys(queries).length;
+
+    const procesarResultado = (key, resultado) => {
+      resultados[key] = resultado;
+      queriesCompletadas++;
+      if (queriesCompletadas === totalQueries) {
+        res.json(resultados);
+      }
+    };
+
+    // Ejecutar todas las queries
+    db.get(queries.totalFamilias, (err, row) => {
+      if (err) console.error('Error en totalFamilias:', err);
+      procesarResultado('total_familias', (row && row.total) || 0);
+    });
+
+    db.get(queries.totalPacientes, (err, row) => {
+      if (err) console.error('Error en totalPacientes:', err);
+      procesarResultado('total_pacientes', (row && row.total) || 0);
+    });
+
+    db.get(queries.totalAtenciones, (err, row) => {
+      if (err) console.error('Error en totalAtenciones:', err);
+      procesarResultado('total_atenciones', (row && row.total) || 0);
+    });
+
+    db.get(queries.atencionesMes, (err, row) => {
+      if (err) console.error('Error en atencionesMes:', err);
+      procesarResultado('atenciones_mes', (row && row.total) || 0);
+    });
+
+    db.all(queries.diagnosticosFrecuentes, (err, rows) => {
+      if (err) console.error('Error en diagnosticosFrecuentes:', err);
+      procesarResultado('diagnosticos_frecuentes', rows || []);
+    });
   });
 });
 
