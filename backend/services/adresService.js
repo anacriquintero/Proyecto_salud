@@ -1,44 +1,169 @@
 // backend/services/adresService.js
 // Servicio para consultar datos de pacientes desde ADRES/BDUA
-// Estructura preparada para múltiples proveedores de API
+// Integración con Apitude (https://apitude.co)
 
 const fetch = require('node-fetch');
 require('dotenv').config();
 
 /**
+ * Mapea tipo de documento a formato de Apitude
+ */
+function mapearTipoDocumento(tipoDocumento) {
+  const mapeo = {
+    'CC': 'cedula',
+    'TI': 'cedula', // Apitude usa 'cedula' para ambos
+    'CE': 'cedula'
+  };
+  return mapeo[tipoDocumento] || 'cedula';
+}
+
+/**
+ * Consulta datos usando API de Apitude
+ * @param {string} numeroDocumento - Número de documento
+ * @param {string} tipoDocumento - Tipo de documento (CC, TI, CE)
+ * @returns {Promise<Object|null>} Datos del paciente o null si no hay API key o no se encuentra
+ */
+async function consultarApitude(numeroDocumento, tipoDocumento = 'CC') {
+  try {
+    const apiKey = process.env.APITUDE_API_KEY;
+    
+    if (!apiKey) {
+      console.log('[ADRES] Apitude API key no configurada. Agrega APITUDE_API_KEY en .env');
+      return null;
+    }
+
+    const apiUrl = 'https://apitude.co/api/v1.0/requests/adres-co/';
+    const documentType = mapearTipoDocumento(tipoDocumento);
+
+    // Paso 1: Crear solicitud (POST)
+    console.log(`[ADRES] Creando solicitud en Apitude para documento: ${numeroDocumento}`);
+    
+    const createResponse = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        document_number: numeroDocumento,
+        document_type: documentType
+      })
+    });
+
+    if (!createResponse.ok) {
+      const errorText = await createResponse.text();
+      console.error('[ADRES] Error creando solicitud en Apitude:', createResponse.status, errorText);
+      return null;
+    }
+
+    const createData = await createResponse.json();
+    const requestId = createData.request_id;
+
+    if (!requestId) {
+      console.error('[ADRES] No se recibió request_id de Apitude');
+      return null;
+    }
+
+    console.log(`[ADRES] Solicitud creada, request_id: ${requestId}`);
+
+    // Paso 2: Polling para obtener resultado (GET)
+    const maxAttempts = 10;
+    const delayMs = 2000; // 2 segundos entre intentos
+    
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+      
+      const getUrl = `https://apitude.co/api/v1.0/requests/adres-co/${requestId}/`;
+      const getResponse = await fetch(getUrl, {
+        method: 'GET',
+        headers: {
+          'x-api-key': apiKey,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!getResponse.ok) {
+        console.error(`[ADRES] Error obteniendo resultado (intento ${attempt}):`, getResponse.status);
+        continue;
+      }
+
+      const resultData = await getResponse.json();
+      
+      // Si el resultado está completo y exitoso
+      if (resultData.result && resultData.result.status === 200 && resultData.result.data) {
+        const data = resultData.result.data;
+        
+        // Separar nombres y apellidos
+        const nombresCompletos = (data.nombres || '').split(' ');
+        const apellidosCompletos = (data.apellidos || '').split(' ');
+        
+        // Mapear respuesta de Apitude a formato estándar
+        return {
+          nombres: data.nombres || '',
+          apellidos: data.apellidos || '',
+          primer_nombre: nombresCompletos[0] || '',
+          segundo_nombre: nombresCompletos.slice(1).join(' ') || '',
+          primer_apellido: apellidosCompletos[0] || '',
+          segundo_apellido: apellidosCompletos.slice(1).join(' ') || '',
+          fecha_nacimiento: data.fecha_de_nacimiento || null,
+          eps: data.estado_afiliacion?.entidad || null,
+          regimen: data.estado_afiliacion?.regimen || null,
+          estado_afiliacion: data.estado_afiliacion?.estado || null,
+          tipo_afiliado: data.estado_afiliacion?.tipo_de_afiliado || null,
+          fecha_afiliacion: data.estado_afiliacion?.fecha_de_afiliacion_efectiva || null,
+          municipio: data.municipio || null,
+          departamento: data.departamento || null,
+          tipo_identificacion: data.tipo_de_identificacion || tipoDocumento,
+          numero_identificacion: data.numero_de_identificacion || numeroDocumento
+        };
+      }
+      
+      // Si el resultado es 404 (no encontrado)
+      if (resultData.result && resultData.result.status === 404) {
+        console.log('[ADRES] Documento no encontrado en ADRES');
+        return null;
+      }
+      
+      // Si aún está procesando, continuar polling
+      if (resultData.result && resultData.result.status === 500) {
+        console.log(`[ADRES] Servicio no disponible (intento ${attempt}), reintentando...`);
+        continue;
+      }
+      
+      // Si el mensaje dice que está completo pero no hay datos
+      if (resultData.message === 'Request completed' && (!resultData.result || !resultData.result.data)) {
+        return null;
+      }
+    }
+
+    console.log('[ADRES] Timeout esperando resultado de Apitude');
+    return null;
+  } catch (error) {
+    console.error('[ADRES] Error en consulta Apitude:', error);
+    return null;
+  }
+}
+
+/**
  * Consulta datos de un paciente por número de documento
+ * Intenta usar Apitude primero, luego otras opciones
  * @param {string} numeroDocumento - Número de documento (cédula)
  * @param {string} tipoDocumento - Tipo de documento (CC, TI, CE)
- * @returns {Promise<Object>} Datos del paciente encontrados
+ * @returns {Promise<Object|null>} Datos del paciente encontrados o null
  */
 async function consultarADRES(numeroDocumento, tipoDocumento = 'CC') {
   try {
-    // Por ahora, implementamos una estructura base
-    // que puede ser fácilmente reemplazada cuando haya API oficial disponible
-    
-    // Opción 1: Intentar con API de hiSmart (si está disponible)
-    // Nota: Esta API puede requerir credenciales y tener costos
-    // const result = await consultarHiSmart(numeroDocumento, tipoDocumento);
-    // if (result) return result;
-    
-    // Opción 2: Estructura base que retorna null para indicar que no hay datos
-    // Esto permite que el frontend maneje el caso y permita entrada manual
     console.log(`[ADRES] Consultando datos para documento: ${numeroDocumento} (${tipoDocumento})`);
     
-    // Por ahora retornamos null para indicar que no hay datos disponibles
-    // Esto puede ser reemplazado con una llamada real a API cuando esté disponible
-    return null;
+    // Intentar con Apitude primero
+    const resultadoApitude = await consultarApitude(numeroDocumento, tipoDocumento);
+    if (resultadoApitude) {
+      return resultadoApitude;
+    }
     
-    // Ejemplo de estructura de respuesta esperada:
-    // {
-    //   nombres: "Juan Carlos",
-    //   apellidos: "Pérez García",
-    //   fecha_nacimiento: "1990-05-15",
-    //   eps: "SURA",
-    //   regimen: "Contributivo",
-    //   numero_afiliacion: "123456789",
-    //   estado_afiliacion: "Activo"
-    // }
+    // Si Apitude no funciona o no está configurado, retornar null
+    // Esto permite que el frontend maneje el caso y permita entrada manual
+    return null;
   } catch (error) {
     console.error('[ADRES] Error consultando datos:', error);
     throw new Error(`Error consultando ADRES: ${error.message}`);
@@ -141,6 +266,7 @@ async function consultarADRESOficial(numeroDocumento, tipoDocumento) {
 
 module.exports = {
   consultarADRES,
+  consultarApitude,
   consultarHiSmart,
   consultarADRESOficial
 };

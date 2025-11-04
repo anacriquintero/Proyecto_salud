@@ -584,6 +584,48 @@ export class AuthService {
     }
   }
 
+  // ==================== MÉTODOS HC PSICOLOGIA ====================
+  static async crearHCPsicologia(data: any) {
+    const response = await fetch(`${API_URL}/hc/psicologia`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Error creando HC psicológica' }));
+      throw new Error(error.error || 'Error creando historia clínica psicológica');
+    }
+    return response.json();
+  }
+
+  static async getHCPsicologia(atencionId: number) {
+    const response = await fetch(`${API_URL}/hc/psicologia/${atencionId}`);
+    if (!response.ok) throw new Error('Error obteniendo HC psicológica');
+    return response.json();
+  }
+
+  static async updateHCPsicologia(atencionId: number, data: any) {
+    const response = await fetch(`${API_URL}/hc/psicologia/${atencionId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!response.ok) throw new Error('Error actualizando HC psicológica');
+    return response.json();
+  }
+
+  static async getHCPsicologiaPaciente(pacienteId: number) {
+    const response = await fetch(`${API_URL}/pacientes/${pacienteId}/hc-psicologia`);
+    if (!response.ok) throw new Error('Error obteniendo HC psicológicas del paciente');
+    return response.json();
+  }
+
+  static async getHCPsicologiaCompletadas(usuarioId: number) {
+    const response = await fetch(`${API_URL}/usuarios/${usuarioId}/hc-psicologia-completadas`);
+    if (!response.ok) throw new Error('Error obteniendo HC psicológicas completadas');
+    return response.json();
+  }
+
   // ==================== MÉTODOS PERFILES AUTOCOMPLETADO ====================
 
   static async getPerfiles(tipoPerfil?: string, usuarioId?: number): Promise<PerfilAutocompletado[]> {
@@ -678,7 +720,7 @@ export class AuthService {
 
   // ==================== MÉTODOS CONSULTA ADRES ====================
 
-  static async consultarADRES(numeroDocumento: string, tipoDocumento: string = 'CC'): Promise<ConsultaADRESResponse> {
+  static async consultarADRES(numeroDocumento: string, tipoDocumento: string = 'CC'): Promise<ConsultaADRESResponse & { requiere_configuracion?: boolean }> {
     try {
       const url = `${API_URL}/pacientes/consultar-adres/${numeroDocumento}?tipo_documento=${tipoDocumento}`;
       console.log('🔍 [consultarADRES] URL:', url);
@@ -687,6 +729,16 @@ export class AuthService {
       const data = await response.json();
       
       if (!response.ok) {
+        // Si es 503, significa que la API no está configurada
+        if (response.status === 503 && data.requiere_configuracion) {
+          return {
+            success: false,
+            message: data.message || 'La integración con ADRES no está configurada',
+            datos: null,
+            requiere_configuracion: true
+          };
+        }
+        
         // Si es 404, significa que no se encontró información (no es un error crítico)
         if (response.status === 404) {
           return {
@@ -695,6 +747,7 @@ export class AuthService {
             datos: null
           };
         }
+        
         throw new Error(data.error || data.message || 'Error consultando ADRES');
       }
       

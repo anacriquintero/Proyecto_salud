@@ -43,15 +43,41 @@ export const ConsultarADRESButton: React.FC<ConsultarADRESButtonProps> = ({
         // Resetear estado después de 2 segundos
         setTimeout(() => setEstado('idle'), 2000);
       } else {
-        setEstado('not_found');
-        onDatosEncontrados(null);
-        alert(respuesta.message || 'No se encontró información del paciente en ADRES. Puede ingresar los datos manualmente.');
+        // Verificar si es un error de configuración
+        if ((respuesta as any).requiere_configuracion) {
+          setEstado('error');
+          alert(
+            'La integración con ADRES no está configurada.\n\n' +
+            'Para activar la consulta automática de datos:\n' +
+            '1. Obtén una API key de Apitude (https://apitude.co)\n' +
+            '2. Agrega APITUDE_API_KEY=tu_api_key en backend/.env\n' +
+            '3. Reinicia el servidor backend\n\n' +
+            'Mientras tanto, puedes ingresar los datos manualmente.'
+          );
+        } else {
+          setEstado('not_found');
+          onDatosEncontrados(null);
+          alert(respuesta.message || 'No se encontró información del paciente en ADRES. Puede ingresar los datos manualmente.');
+        }
         setTimeout(() => setEstado('idle'), 3000);
       }
     } catch (error: any) {
       console.error('Error consultando ADRES:', error);
       setEstado('error');
-      alert(`Error consultando ADRES: ${error.message || 'Error desconocido'}`);
+      
+      // Verificar si es un error de configuración
+      if (error.message && error.message.includes('503')) {
+        alert(
+          'La integración con ADRES no está configurada.\n\n' +
+          'Para activar la consulta automática:\n' +
+          '1. Obtén una API key de Apitude\n' +
+          '2. Agrega APITUDE_API_KEY en backend/.env\n' +
+          '3. Reinicia el servidor\n\n' +
+          'Puedes ingresar los datos manualmente mientras tanto.'
+        );
+      } else {
+        alert(`Error consultando ADRES: ${error.message || 'Error desconocido'}`);
+      }
       setTimeout(() => setEstado('idle'), 3000);
     } finally {
       setConsultando(false);
