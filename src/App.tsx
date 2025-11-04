@@ -483,8 +483,8 @@ function InicioView({ currentRole, deviceType, onNavigate }: any) {
         )}
       </ResponsiveCard>
 
-      {/* Herramienta IA: Texto a voz (Médico / Psicólogo) */}
-      {['medico','psicologo'].includes(currentRole) && (
+      {/* Herramienta IA: Texto a voz (Médico / Psicólogo / Auxiliar / Enfermero Jefe / Fisioterapeuta / Nutricionista / Fonoaudiólogo / Odontólogo) */}
+      {['medico','psicologo','auxiliar_enfermeria','enfermero_jefe','fisioterapeuta','nutricionista','fonoaudiologo','odontologo'].includes(currentRole) && (
         <ResponsiveCard>
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold text-eden-800">Asistente de voz (ElevenLabs)</h3>
@@ -547,8 +547,8 @@ function InicioView({ currentRole, deviceType, onNavigate }: any) {
         </ResponsiveCard>
       )}
 
-      {/* Herramienta IA: Voz a texto (Médico / Psicólogo) */}
-      {['medico','psicologo'].includes(currentRole) && (
+      {/* Herramienta IA: Voz a texto (Médico / Psicólogo / Auxiliar / Enfermero Jefe / Fisioterapeuta / Nutricionista / Fonoaudiólogo / Odontólogo) */}
+      {['medico','psicologo','auxiliar_enfermeria','enfermero_jefe','fisioterapeuta','nutricionista','fonoaudiologo','odontologo'].includes(currentRole) && (
         <ResponsiveCard>
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold text-eden-800">Dictado médico (STT)</h3>
@@ -1304,6 +1304,8 @@ function DetallePacienteView({ paciente, familia, caracterizacion, onBack }: any
 function ConsultasAsignadasView({ deviceType }: any) {
   const { user } = useAuth();
   const isPsicologo = user?.role === 'psicologo';
+  const isNutricionista = user?.role === 'nutricionista';
+  const isFisioterapeuta = user?.role === 'fisioterapeuta';
   const [selectedPatient, setSelectedPatient] = useState<any>(null);
   const [selectedAtencion, setSelectedAtencion] = useState<any>(null);
   const [demandasInducidas, setDemandasInducidas] = useState<any[]>([]);
@@ -1396,6 +1398,24 @@ function ConsultasAsignadasView({ deviceType }: any) {
 
   // Si es psicólogo y tiene paciente seleccionado, mostrar HC psicológica
   if (isPsicologo && selectedPatient) {
+  // Si es nutricionista y tiene paciente seleccionado, mostrar HC Nutrición
+  if (isNutricionista && selectedPatient) {
+    return (
+      <HCNutricionView
+        paciente={selectedPatient}
+        atencion={selectedAtencion}
+        onSave={() => {
+          setSelectedPatient(null);
+          setSelectedAtencion(null);
+          loadDemandasInducidas();
+        }}
+        onCancel={() => {
+          setSelectedPatient(null);
+          setSelectedAtencion(null);
+        }}
+      />
+    );
+  }
     return (
       <HCPsicologiaView
         paciente={selectedPatient}
@@ -1413,8 +1433,65 @@ function ConsultasAsignadasView({ deviceType }: any) {
     );
   }
   
-  // Si no es psicólogo y tiene paciente seleccionado, mostrar HC medicina
-  if (!isPsicologo && selectedPatient) {
+  // Si es fisioterapeuta y tiene paciente seleccionado, mostrar HC Fisioterapia
+  if (isFisioterapeuta && selectedPatient) {
+    return (
+      <HCFisioterapiaView
+        paciente={selectedPatient}
+        atencion={selectedAtencion}
+        onSave={() => {
+          setSelectedPatient(null);
+          setSelectedAtencion(null);
+          loadDemandasInducidas();
+        }}
+        onCancel={() => {
+          setSelectedPatient(null);
+          setSelectedAtencion(null);
+        }}
+      />
+    );
+  }
+
+  // Si es fonoaudiólogo y tiene paciente seleccionado, mostrar HC Fonoaudiología
+  if (user?.role === 'fonoaudiologo' && selectedPatient) {
+    return (
+      <HCFonoaudiologiaView
+        paciente={selectedPatient}
+        atencion={selectedAtencion}
+        onSave={() => {
+          setSelectedPatient(null);
+          setSelectedAtencion(null);
+          loadDemandasInducidas();
+        }}
+        onCancel={() => {
+          setSelectedPatient(null);
+          setSelectedAtencion(null);
+        }}
+      />
+    );
+  }
+
+  // Si es odontólogo y tiene paciente seleccionado, mostrar HC Odontología
+  if (user?.role === 'odontologo' && selectedPatient) {
+    return (
+      <HCOdontologiaView
+        paciente={selectedPatient}
+        atencion={selectedAtencion}
+        onSave={() => {
+          setSelectedPatient(null);
+          setSelectedAtencion(null);
+          loadDemandasInducidas();
+        }}
+        onCancel={() => {
+          setSelectedPatient(null);
+          setSelectedAtencion(null);
+        }}
+      />
+    );
+  }
+
+  // Si no es psicólogo ni fisioterapeuta y tiene paciente seleccionado, mostrar HC medicina
+  if (!isPsicologo && !isFisioterapeuta && selectedPatient) {
     return <HistoriaClinicaView patient={selectedPatient} onBack={() => setSelectedPatient(null)} deviceType={deviceType} />;
   }
 
@@ -7430,6 +7507,254 @@ function DashboardPsicologiaView({ deviceType }: any) {
   );
 }
 
+// Vista: Dashboard de Nutrición
+function DashboardNutricionView({ deviceType }: any) {
+  const [stats, setStats] = useState({
+    totalConsultas: 0,
+    consultasCompletadas: 0,
+    consultasPendientes: 0,
+    pacientesAtendidos: 0
+  });
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        // Placeholder hasta tener endpoints específicos de nutrición
+        const total = 0;
+        if (isMounted) setStats({
+          totalConsultas: total,
+          consultasCompletadas: 0,
+          consultasPendientes: 0,
+          pacientesAtendidos: 0
+        });
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    })();
+    return () => { isMounted = false; };
+  }, []);
+
+  return (
+    <div className="space-y-4 md:space-y-6">
+      <ResponsiveCard>
+        <h3 className="font-semibold text-eden-800 mb-4">Dashboard - Nutrición</h3>
+        <p className="text-sm text-stone-600 mb-4">Información epidemiológica y de atención nutricional</p>
+        {isLoading ? (
+          <div className="text-sm text-eden-500 py-8 text-center">Cargando estadísticas...</div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="p-4 bg-bondi-50 rounded-lg border border-bondi-200">
+              <div className="text-sm text-bondi-600 mb-1">Total Consultas</div>
+              <div className="text-2xl font-bold text-bondi-700">{stats.totalConsultas}</div>
+            </div>
+            <div className="p-4 bg-san-marino-50 rounded-lg border border-san-marino-200">
+              <div className="text-sm text-san-marino-600 mb-1">Completadas</div>
+              <div className="text-2xl font-bold text-san-marino-700">{stats.consultasCompletadas}</div>
+            </div>
+            <div className="p-4 bg-janna-50 rounded-lg border border-janna-200">
+              <div className="text-sm text-janna-600 mb-1">Pendientes</div>
+              <div className="text-2xl font-bold text-janna-700">{stats.consultasPendientes}</div>
+            </div>
+            <div className="p-4 bg-eden-50 rounded-lg border border-eden-200">
+              <div className="text-sm text-eden-600 mb-1">Pacientes Atendidos</div>
+              <div className="text-2xl font-bold text-eden-700">{stats.pacientesAtendidos}</div>
+            </div>
+          </div>
+        )}
+      </ResponsiveCard>
+    </div>
+  );
+}
+
+// Vista: Dashboard de Fonoaudiología
+function DashboardFonoaudiologiaView({ deviceType }: any) {
+  const [stats, setStats] = useState({
+    totalConsultas: 0,
+    terapiasCompletadas: 0,
+    terapiasPendientes: 0,
+    pacientesAtendidos: 0
+  });
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        if (isMounted) setStats({
+          totalConsultas: 0,
+          terapiasCompletadas: 0,
+          terapiasPendientes: 0,
+          pacientesAtendidos: 0
+        });
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    })();
+    return () => { isMounted = false; };
+  }, []);
+
+  return (
+    <div className="space-y-4 md:space-y-6">
+      <ResponsiveCard>
+        <h3 className="font-semibold text-eden-800 mb-4">Dashboard - Fonoaudiología</h3>
+        <p className="text-sm text-stone-600 mb-4">Información epidemiológica y operativa de fonoaudiología</p>
+        {isLoading ? (
+          <div className="text-sm text-eden-500 py-8 text-center">Cargando estadísticas...</div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="p-4 bg-bondi-50 rounded-lg border border-bondi-200">
+              <div className="text-sm text-bondi-600 mb-1">Total Consultas</div>
+              <div className="text-2xl font-bold text-bondi-700">{stats.totalConsultas}</div>
+            </div>
+            <div className="p-4 bg-san-marino-50 rounded-lg border border-san-marino-200">
+              <div className="text-sm text-san-marino-600 mb-1">Completadas</div>
+              <div className="text-2xl font-bold text-san-marino-700">{stats.terapiasCompletadas}</div>
+            </div>
+            <div className="p-4 bg-janna-50 rounded-lg border border-janna-200">
+              <div className="text-sm text-janna-600 mb-1">Pendientes</div>
+              <div className="text-2xl font-bold text-janna-700">{stats.terapiasPendientes}</div>
+            </div>
+            <div className="p-4 bg-eden-50 rounded-lg border border-eden-200">
+              <div className="text-sm text-eden-600 mb-1">Pacientes Atendidos</div>
+              <div className="text-2xl font-bold text-eden-700">{stats.pacientesAtendidos}</div>
+            </div>
+          </div>
+        )}
+      </ResponsiveCard>
+    </div>
+  );
+}
+
+// Vista: Dashboard de Odontología
+function DashboardOdontologiaView({ deviceType }: any) {
+  const [stats, setStats] = useState({
+    totalConsultas: 0,
+    tratamientosCompletados: 0,
+    pendientes: 0,
+    pacientesAtendidos: 0
+  });
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        if (mounted) setStats({ totalConsultas: 0, tratamientosCompletados: 0, pendientes: 0, pacientesAtendidos: 0 });
+      } finally {
+        if (mounted) setIsLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  return (
+    <div className="space-y-4 md:space-y-6">
+      <ResponsiveCard>
+        <h3 className="font-semibold text-eden-800 mb-4">Dashboard - Odontología</h3>
+        <p className="text-sm text-stone-600 mb-4">Información epidemiológica y operativa de odontología</p>
+        {isLoading ? (
+          <div className="text-sm text-eden-500 py-8 text-center">Cargando estadísticas...</div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="p-4 bg-bondi-50 rounded-lg border border-bondi-200">
+              <div className="text-sm text-bondi-600 mb-1">Total Consultas</div>
+              <div className="text-2xl font-bold text-bondi-700">{stats.totalConsultas}</div>
+            </div>
+            <div className="p-4 bg-san-marino-50 rounded-lg border border-san-marino-200">
+              <div className="text-sm text-san-marino-600 mb-1">Tratamientos Completados</div>
+              <div className="text-2xl font-bold text-san-marino-700">{stats.tratamientosCompletados}</div>
+            </div>
+            <div className="p-4 bg-janna-50 rounded-lg border border-janna-200">
+              <div className="text-sm text-janna-600 mb-1">Pendientes</div>
+              <div className="text-2xl font-bold text-janna-700">{stats.pendientes}</div>
+            </div>
+            <div className="p-4 bg-eden-50 rounded-lg border border-eden-200">
+              <div className="text-sm text-eden-600 mb-1">Pacientes Atendidos</div>
+              <div className="text-2xl font-bold text-eden-700">{stats.pacientesAtendidos}</div>
+            </div>
+          </div>
+        )}
+      </ResponsiveCard>
+    </div>
+  );
+}
+
+// Vista: Dashboard de Fisioterapia
+function DashboardFisioterapiaView({ deviceType }: any) {
+  const { user } = useAuth();
+  const [stats, setStats] = useState({
+    totalTerapias: 0,
+    terapiasCompletadas: 0,
+    terapiasPendientes: 0,
+    pacientesAtendidos: 0
+  });
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        if (!user?.id) return;
+        // Por ahora usamos las mismas fuentes que otros dashboards hasta tener endpoints específicos
+        const demandas = await AuthService.getDemandasAsignadas(Number(user.id));
+        const demandasArray = Array.isArray(demandas) ? demandas : [];
+        // No existe HC Fisioterapia aún; asumimos 0 completadas hasta implementar
+        const completadas = [] as any[];
+
+        if (isMounted) {
+          setStats({
+            totalTerapias: completadas.length + demandasArray.length,
+            terapiasCompletadas: completadas.length,
+            terapiasPendientes: demandasArray.filter((d: any) => d.estado === 'Pendiente' || d.estado === 'Asignada').length,
+            pacientesAtendidos: new Set(completadas.map((hc: any) => hc.paciente_id)).size
+          });
+        }
+      } catch (e) {
+        console.error('Error cargando estadísticas (Fisioterapia):', e);
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    })();
+    return () => { isMounted = false; };
+  }, [user]);
+
+  return (
+    <div className="space-y-4 md:space-y-6">
+      <ResponsiveCard>
+        <h3 className="font-semibold text-eden-800 mb-4">Dashboard - Fisioterapia</h3>
+        <p className="text-sm text-stone-600 mb-4">
+          Información epidemiológica y operativa de fisioterapia en territorios
+        </p>
+
+        {isLoading ? (
+          <div className="text-sm text-eden-500 py-8 text-center">Cargando estadísticas...</div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="p-4 bg-bondi-50 rounded-lg border border-bondi-200">
+              <div className="text-sm text-bondi-600 mb-1">Total Terapias</div>
+              <div className="text-2xl font-bold text-bondi-700">{stats.totalTerapias}</div>
+            </div>
+            <div className="p-4 bg-san-marino-50 rounded-lg border border-san-marino-200">
+              <div className="text-sm text-san-marino-600 mb-1">Completadas</div>
+              <div className="text-2xl font-bold text-san-marino-700">{stats.terapiasCompletadas}</div>
+            </div>
+            <div className="p-4 bg-janna-50 rounded-lg border border-janna-200">
+              <div className="text-sm text-janna-600 mb-1">Pendientes</div>
+              <div className="text-2xl font-bold text-janna-700">{stats.terapiasPendientes}</div>
+            </div>
+            <div className="p-4 bg-eden-50 rounded-lg border border-eden-200">
+              <div className="text-sm text-eden-600 mb-1">Pacientes Atendidos</div>
+              <div className="text-2xl font-bold text-eden-700">{stats.pacientesAtendidos}</div>
+            </div>
+          </div>
+        )}
+      </ResponsiveCard>
+    </div>
+  );
+}
+
 // Vista: Educación en Salud
 function EducacionSaludView({ deviceType }: any) {
   const [actividades, setActividades] = useState<any[]>([]);
@@ -7725,6 +8050,487 @@ function HCPsicologiaView({ atencion, paciente, onSave, onCancel }: any) {
   );
 }
 
+// Vista: Historia Clínica Fisioterapia (UI + STT)
+function HCFisioterapiaView({ atencion, paciente, onSave, onCancel }: any) {
+  const [form, setForm] = useState<any>({
+    motivo_consulta: '',
+    evaluacion_fisica: '',
+    objetivos: '',
+    plan_tratamiento: '',
+    evolucion: ''
+  });
+  const [saving, setSaving] = useState(false);
+
+  const appendText = (field: keyof typeof form, text: string) => {
+    setForm((prev: any) => ({ ...prev, [field]: `${prev[field] ? prev[field] + ' ' : ''}${text}`.trim() }));
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      // Por ahora, solo confirmación visual; endpoints específicos de Fisioterapia aún no están disponibles
+      alert('Historia Clínica de Fisioterapia guardada (UI).');
+      if (onSave) onSave();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4 md:space-y-6">
+      <ResponsiveCard>
+        <div className="flex items-center gap-3 mb-4">
+          {onCancel && (
+            <button onClick={onCancel} className="p-2 -ml-2 rounded-lg hover:bg-stone-100">
+              <ChevronRight className="w-5 h-5 rotate-180" />
+            </button>
+          )}
+          <h3 className="font-semibold text-stone-900">Historia Clínica Fisioterapia</h3>
+        </div>
+
+        {paciente && (
+          <div className="mb-4 p-3 bg-stone-50 rounded-lg">
+            <div className="text-sm font-medium text-stone-900">
+              {paciente.primer_nombre || paciente.nombre} {paciente.primer_apellido || ''}
+            </div>
+            <div className="text-xs text-stone-600">
+              {paciente.tipo_documento || ''} {paciente.numero_documento || paciente.documento}
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-4">
+          <ResponsiveField label="Motivo de Consulta" required>
+            <div className="flex items-start gap-2">
+              <textarea
+                className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none"
+                rows={3}
+                value={form.motivo_consulta}
+                onChange={(e: any) => setForm({ ...form, motivo_consulta: e.target.value })}
+                placeholder="Dolor, limitación funcional, etc."
+              />
+              <STTButton onTranscription={(t) => appendText('motivo_consulta', t)} />
+            </div>
+          </ResponsiveField>
+
+          <ResponsiveField label="Evaluación Física">
+            <div className="flex items-start gap-2">
+              <textarea
+                className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none"
+                rows={5}
+                value={form.evaluacion_fisica}
+                onChange={(e: any) => setForm({ ...form, evaluacion_fisica: e.target.value })}
+                placeholder="Inspección, palpación, rangos articulares, fuerza, pruebas especiales..."
+              />
+              <STTButton onTranscription={(t) => appendText('evaluacion_fisica', t)} />
+            </div>
+          </ResponsiveField>
+
+          <ResponsiveField label="Objetivos de Tratamiento">
+            <div className="flex items-start gap-2">
+              <textarea
+                className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none"
+                rows={3}
+                value={form.objetivos}
+                onChange={(e: any) => setForm({ ...form, objetivos: e.target.value })}
+                placeholder="Corto y mediano plazo"
+              />
+              <STTButton onTranscription={(t) => appendText('objetivos', t)} />
+            </div>
+          </ResponsiveField>
+
+          <ResponsiveField label="Plan de Tratamiento">
+            <div className="flex items-start gap-2">
+              <textarea
+                className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none"
+                rows={4}
+                value={form.plan_tratamiento}
+                onChange={(e: any) => setForm({ ...form, plan_tratamiento: e.target.value })}
+                placeholder="Ejercicio terapéutico, terapia manual, electroterapia, educación..."
+              />
+              <STTButton onTranscription={(t) => appendText('plan_tratamiento', t)} />
+            </div>
+          </ResponsiveField>
+
+          <ResponsiveField label="Evolución / Notas">
+            <div className="flex items-start gap-2">
+              <textarea
+                className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none"
+                rows={4}
+                value={form.evolucion}
+                onChange={(e: any) => setForm({ ...form, evolucion: e.target.value })}
+                placeholder="Cambios clínicos, respuesta al tratamiento, adherencia..."
+              />
+              <STTButton onTranscription={(t) => appendText('evolucion', t)} />
+            </div>
+          </ResponsiveField>
+        </div>
+
+        <div className="flex gap-3 pt-4">
+          {onCancel && (
+            <ResponsiveButton variant="secondary" onClick={onCancel} disabled={saving}>
+              Cancelar
+            </ResponsiveButton>
+          )}
+          <ResponsiveButton onClick={handleSave} disabled={saving}>
+            {saving ? 'Guardando...' : 'Guardar Historia Clínica'}
+          </ResponsiveButton>
+        </div>
+      </ResponsiveCard>
+    </div>
+  );
+}
+
+// Vista: Historia Clínica Nutricional (UI + STT)
+function HCNutricionView({ atencion, paciente, onSave, onCancel }: any) {
+  const [form, setForm] = useState<any>({
+    motivo_consulta: '',
+    evaluacion_nutricional: '',
+    diagnostico_nutricional: '',
+    plan_alimentario: '',
+    seguimiento: ''
+  });
+  const [saving, setSaving] = useState(false);
+
+  const appendText = (field: keyof typeof form, text: string) => {
+    setForm((prev: any) => ({ ...prev, [field]: `${prev[field] ? prev[field] + ' ' : ''}${text}`.trim() }));
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      alert('Historia Clínica Nutricional guardada (UI).');
+      if (onSave) onSave();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4 md:space-y-6">
+      <ResponsiveCard>
+        <div className="flex items-center gap-3 mb-4">
+          {onCancel && (
+            <button onClick={onCancel} className="p-2 -ml-2 rounded-lg hover:bg-stone-100">
+              <ChevronRight className="w-5 h-5 rotate-180" />
+            </button>
+          )}
+          <h3 className="font-semibold text-stone-900">Historia Clínica Nutricional</h3>
+        </div>
+
+        {paciente && (
+          <div className="mb-4 p-3 bg-stone-50 rounded-lg">
+            <div className="text-sm font-medium text-stone-900">
+              {paciente.primer_nombre || paciente.nombre} {paciente.primer_apellido || ''}
+            </div>
+            <div className="text-xs text-stone-600">
+              {paciente.tipo_documento || ''} {paciente.numero_documento || paciente.documento}
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-4">
+          <ResponsiveField label="Motivo de Consulta" required>
+            <div className="flex items-start gap-2">
+              <textarea className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none" rows={3}
+                value={form.motivo_consulta}
+                onChange={(e: any) => setForm({ ...form, motivo_consulta: e.target.value })}
+                placeholder="Ej: control de peso, DM2, HTA, dislipidemia..." />
+              <STTButton onTranscription={(t) => appendText('motivo_consulta', t)} />
+            </div>
+          </ResponsiveField>
+
+          <ResponsiveField label="Evaluación Nutricional">
+            <div className="flex items-start gap-2">
+              <textarea className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none" rows={5}
+                value={form.evaluacion_nutricional}
+                onChange={(e: any) => setForm({ ...form, evaluacion_nutricional: e.target.value })}
+                placeholder="Historia dietaria, antropometría, recordatorio 24h, frecuencia alimentos..." />
+              <STTButton onTranscription={(t) => appendText('evaluacion_nutricional', t)} />
+            </div>
+          </ResponsiveField>
+
+          <ResponsiveField label="Diagnóstico Nutricional">
+            <div className="flex items-start gap-2">
+              <textarea className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none" rows={3}
+                value={form.diagnostico_nutricional}
+                onChange={(e: any) => setForm({ ...form, diagnostico_nutricional: e.target.value })}
+                placeholder="Ej: Obesidad grado I, Desnutrición moderada..." />
+              <STTButton onTranscription={(t) => appendText('diagnostico_nutricional', t)} />
+            </div>
+          </ResponsiveField>
+
+          <ResponsiveField label="Plan Alimentario / Recomendaciones">
+            <div className="flex items-start gap-2">
+              <textarea className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none" rows={4}
+                value={form.plan_alimentario}
+                onChange={(e: any) => setForm({ ...form, plan_alimentario: e.target.value })}
+                placeholder="Distribución de macronutrientes, porciones, guías prácticas..." />
+              <STTButton onTranscription={(t) => appendText('plan_alimentario', t)} />
+            </div>
+          </ResponsiveField>
+
+          <ResponsiveField label="Seguimiento">
+            <div className="flex items-start gap-2">
+              <textarea className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none" rows={3}
+                value={form.seguimiento}
+                onChange={(e: any) => setForm({ ...form, seguimiento: e.target.value })}
+                placeholder="Citas de control, metas, adherencia, barreras..." />
+              <STTButton onTranscription={(t) => appendText('seguimiento', t)} />
+            </div>
+          </ResponsiveField>
+        </div>
+
+        <div className="flex gap-3 pt-4">
+          {onCancel && (
+            <ResponsiveButton variant="secondary" onClick={onCancel} disabled={saving}>Cancelar</ResponsiveButton>
+          )}
+          <ResponsiveButton onClick={handleSave} disabled={saving}>
+            {saving ? 'Guardando...' : 'Guardar Historia Clínica'}
+          </ResponsiveButton>
+        </div>
+      </ResponsiveCard>
+    </div>
+  );
+}
+
+// Vista: Historia Clínica Fonoaudiología (UI + STT)
+function HCFonoaudiologiaView({ atencion, paciente, onSave, onCancel }: any) {
+  const [form, setForm] = useState<any>({
+    motivo_consulta: '',
+    evaluacion_fono: '', // lenguaje, voz, audición, deglución
+    diagnosticos: '',
+    plan_terapeutico: '',
+    evolucion: ''
+  });
+  const [saving, setSaving] = useState(false);
+
+  const appendText = (field: keyof typeof form, text: string) => {
+    setForm((prev: any) => ({ ...prev, [field]: `${prev[field] ? prev[field] + ' ' : ''}${text}`.trim() }));
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      alert('Historia Clínica de Fonoaudiología guardada (UI).');
+      if (onSave) onSave();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4 md:space-y-6">
+      <ResponsiveCard>
+        <div className="flex items-center gap-3 mb-4">
+          {onCancel && (
+            <button onClick={onCancel} className="p-2 -ml-2 rounded-lg hover:bg-stone-100">
+              <ChevronRight className="w-5 h-5 rotate-180" />
+            </button>
+          )}
+          <h3 className="font-semibold text-stone-900">Historia Clínica Fonoaudiología</h3>
+        </div>
+
+        {paciente && (
+          <div className="mb-4 p-3 bg-stone-50 rounded-lg">
+            <div className="text-sm font-medium text-stone-900">
+              {paciente.primer_nombre || paciente.nombre} {paciente.primer_apellido || ''}
+            </div>
+            <div className="text-xs text-stone-600">
+              {paciente.tipo_documento || ''} {paciente.numero_documento || paciente.documento}
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-4">
+          <ResponsiveField label="Motivo de Consulta" required>
+            <div className="flex items-start gap-2">
+              <textarea className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none" rows={3}
+                value={form.motivo_consulta}
+                onChange={(e: any) => setForm({ ...form, motivo_consulta: e.target.value })}
+                placeholder="Alteraciones del lenguaje, voz, habla, audición, deglución..." />
+              <STTButton onTranscription={(t) => appendText('motivo_consulta', t)} />
+            </div>
+          </ResponsiveField>
+
+          <ResponsiveField label="Evaluación Fonoaudiológica">
+            <div className="flex items-start gap-2">
+              <textarea className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none" rows={5}
+                value={form.evaluacion_fono}
+                onChange={(e: any) => setForm({ ...form, evaluacion_fono: e.target.value })}
+                placeholder="Lenguaje (expresivo/receptivo), voz, articulación, fluidez, audición, deglución..." />
+              <STTButton onTranscription={(t) => appendText('evaluacion_fono', t)} />
+            </div>
+          </ResponsiveField>
+
+          <ResponsiveField label="Diagnósticos">
+            <div className="flex items-start gap-2">
+              <textarea className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none" rows={3}
+                value={form.diagnosticos}
+                onChange={(e: any) => setForm({ ...form, diagnosticos: e.target.value })}
+                placeholder="CIE-10 o descripciones clínicas" />
+              <STTButton onTranscription={(t) => appendText('diagnosticos', t)} />
+            </div>
+          </ResponsiveField>
+
+          <ResponsiveField label="Plan Terapéutico">
+            <div className="flex items-start gap-2">
+              <textarea className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none" rows={4}
+                value={form.plan_terapeutico}
+                onChange={(e: any) => setForm({ ...form, plan_terapeutico: e.target.value })}
+                placeholder="Objetivos, técnicas, frecuencia y duración" />
+              <STTButton onTranscription={(t) => appendText('plan_terapeutico', t)} />
+            </div>
+          </ResponsiveField>
+
+          <ResponsiveField label="Evolución / Notas">
+            <div className="flex items-start gap-2">
+              <textarea className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none" rows={4}
+                value={form.evolucion}
+                onChange={(e: any) => setForm({ ...form, evolucion: e.target.value })}
+                placeholder="Cambios, adherencia, educación, recomendaciones" />
+              <STTButton onTranscription={(t) => appendText('evolucion', t)} />
+            </div>
+          </ResponsiveField>
+        </div>
+
+        <div className="flex gap-3 pt-4">
+          {onCancel && (
+            <ResponsiveButton variant="secondary" onClick={onCancel} disabled={saving}>Cancelar</ResponsiveButton>
+          )}
+          <ResponsiveButton onClick={handleSave} disabled={saving}>
+            {saving ? 'Guardando...' : 'Guardar Historia Clínica'}
+          </ResponsiveButton>
+        </div>
+      </ResponsiveCard>
+    </div>
+  );
+}
+
+// Vista: Historia Clínica Odontológica (UI + STT, con acciones)
+function HCOdontologiaView({ atencion, paciente, onSave, onCancel }: any) {
+  const [form, setForm] = useState<any>({
+    motivo_consulta: '',
+    examen_odontologico: '',
+    diagnosticos: '',
+    plan_tratamiento: '',
+    receta: '',
+    ordenes: ''
+  });
+  const [saving, setSaving] = useState(false);
+
+  const appendText = (field: keyof typeof form, text: string) => {
+    setForm((prev: any) => ({ ...prev, [field]: `${prev[field] ? prev[field] + ' ' : ''}${text}`.trim() }));
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      alert('Historia Clínica Odontológica guardada (UI).');
+      if (onSave) onSave();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4 md:space-y-6">
+      <ResponsiveCard>
+        <div className="flex items-center gap-3 mb-4">
+          {onCancel && (
+            <button onClick={onCancel} className="p-2 -ml-2 rounded-lg hover:bg-stone-100">
+              <ChevronRight className="w-5 h-5 rotate-180" />
+            </button>
+          )}
+          <h3 className="font-semibold text-stone-900">Historia Clínica Odontológica</h3>
+        </div>
+
+        {paciente && (
+          <div className="mb-4 p-3 bg-stone-50 rounded-lg">
+            <div className="text-sm font-medium text-stone-900">
+              {paciente.primer_nombre || paciente.nombre} {paciente.primer_apellido || ''}
+            </div>
+            <div className="text-xs text-stone-600">
+              {paciente.tipo_documento || ''} {paciente.numero_documento || paciente.documento}
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-4">
+          <ResponsiveField label="Motivo de Consulta" required>
+            <div className="flex items-start gap-2">
+              <textarea className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none" rows={3}
+                value={form.motivo_consulta}
+                onChange={(e: any) => setForm({ ...form, motivo_consulta: e.target.value })}
+                placeholder="Dolor dental, caries, fractura, control, etc." />
+              <STTButton onTranscription={(t) => appendText('motivo_consulta', t)} />
+            </div>
+          </ResponsiveField>
+
+          <ResponsiveField label="Examen Odontológico">
+            <div className="flex items-start gap-2">
+              <textarea className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none" rows={5}
+                value={form.examen_odontologico}
+                onChange={(e: any) => setForm({ ...form, examen_odontologico: e.target.value })}
+                placeholder="Tejidos blandos, piezas, periodonto, oclusión, hallazgos..." />
+              <STTButton onTranscription={(t) => appendText('examen_odontologico', t)} />
+            </div>
+          </ResponsiveField>
+
+          <ResponsiveField label="Diagnósticos">
+            <div className="flex items-start gap-2">
+              <textarea className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none" rows={3}
+                value={form.diagnosticos}
+                onChange={(e: any) => setForm({ ...form, diagnosticos: e.target.value })}
+                placeholder="CIE-10, caries por pieza, enfermedad periodontal, otros" />
+              <STTButton onTranscription={(t) => appendText('diagnosticos', t)} />
+            </div>
+          </ResponsiveField>
+
+          <ResponsiveField label="Plan de Tratamiento Odontológico">
+            <div className="flex items-start gap-2">
+              <textarea className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none" rows={4}
+                value={form.plan_tratamiento}
+                onChange={(e: any) => setForm({ ...form, plan_tratamiento: e.target.value })}
+                placeholder="Procedimientos, número de sesiones, prioridades" />
+              <STTButton onTranscription={(t) => appendText('plan_tratamiento', t)} />
+            </div>
+          </ResponsiveField>
+
+          <ResponsiveField label="Recetario Digital (texto libre)">
+            <div className="flex items-start gap-2">
+              <textarea className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none" rows={3}
+                value={form.receta}
+                onChange={(e: any) => setForm({ ...form, receta: e.target.value })}
+                placeholder="Medicamentos, dosis, indicaciones" />
+              <STTButton onTranscription={(t) => appendText('receta', t)} />
+            </div>
+          </ResponsiveField>
+
+          <ResponsiveField label="Órdenes de Exámenes">
+            <div className="flex items-start gap-2">
+              <textarea className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none" rows={3}
+                value={form.ordenes}
+                onChange={(e: any) => setForm({ ...form, ordenes: e.target.value })}
+                placeholder="Radiografías periapicales, panorámica, otros" />
+              <STTButton onTranscription={(t) => appendText('ordenes', t)} />
+            </div>
+          </ResponsiveField>
+        </div>
+
+        <div className="flex gap-3 pt-4">
+          {onCancel && (
+            <ResponsiveButton variant="secondary" onClick={onCancel} disabled={saving}>Cancelar</ResponsiveButton>
+          )}
+          <ResponsiveButton onClick={handleSave} disabled={saving}>
+            {saving ? 'Guardando...' : 'Guardar Historia Clínica'}
+          </ResponsiveButton>
+        </div>
+      </ResponsiveCard>
+    </div>
+  );
+}
+
 // Componente principal
 export default function App() {
   const { user, isAuthenticated, isLoading, login, logout } = useAuth();
@@ -7876,10 +8682,20 @@ export default function App() {
       case "consultas-asignadas":
       case "terapias-asignadas":
         return <ConsultasAsignadasView deviceType={deviceType} />;
+      case "terapias-realizadas":
+        return <ConsultasRealizadasView deviceType={deviceType} />;
       case "consultas-realizadas":
         return <ConsultasRealizadasView deviceType={deviceType} />;
       case "dashboard-psicologia":
         return <DashboardPsicologiaView deviceType={deviceType} />;
+  case "dashboard-nutricion":
+    return <DashboardNutricionView deviceType={deviceType} />;
+  case "dashboard-fonoaudiologia":
+    return <DashboardFonoaudiologiaView deviceType={deviceType} />;
+  case "dashboard-odontologia":
+    return <DashboardOdontologiaView deviceType={deviceType} />;
+      case "dashboard-fisioterapia":
+        return <DashboardFisioterapiaView deviceType={deviceType} />;
       case "dashboard-enfermeria":
         return <DashboardEnfermeriaView deviceType={deviceType} />;
       case "educacion-salud":
