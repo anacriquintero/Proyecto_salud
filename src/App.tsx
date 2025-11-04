@@ -175,9 +175,11 @@ export const USER_ROLES = {
     color: "emerald",
     mainSections: [
       { key: "crear-familia", label: "Crear Familia", icon: Users },
-      { key: "caracterizaciones", label: "Caracterizaciones", icon: FileText },
-      { key: "planes-cuidado", label: "Planes de Cuidado", icon: Activity },
-      { key: "consultas-asignadas", label: "Consultas", icon: Calendar },
+      { key: "caracterizaciones", label: "Ver y Editar Caracterizaciones", icon: FileText },
+      { key: "bd-pacientes", label: "BD Pacientes", icon: Search },
+      { key: "planes-cuidado", label: "Planes de Cuidado Familiar", icon: Activity },
+      { key: "consultas-asignadas", label: "Consultas / Asignaciones", icon: Calendar },
+      { key: "educacion-salud", label: "Educación en Salud", icon: FileText },
       { key: "bitacora", label: "Bitácora", icon: Activity }
     ],
     sidebarSections: [
@@ -1300,18 +1302,58 @@ function DetallePacienteView({ paciente, familia, caracterizacion, onBack }: any
 }
 
 function ConsultasAsignadasView({ deviceType }: any) {
+  const { user } = useAuth();
+  const isPsicologo = user?.role === 'psicologo';
   const [selectedPatient, setSelectedPatient] = useState<any>(null);
+  const [selectedAtencion, setSelectedAtencion] = useState<any>(null);
   const [demandasInducidas, setDemandasInducidas] = useState<any[]>([]);
+  const [pacientesAsignados, setPacientesAsignados] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'consultas' | 'demandas'>('demandas');
 
   const loadDemandasInducidas = async () => {
     try {
       setLoading(true);
-      const user = AuthService.getCurrentUser();
-      if (user?.id) {
-        const data = await AuthService.getDemandasAsignadas(Number(user.id));
-        setDemandasInducidas(data);
+      const currentUser = AuthService.getCurrentUser();
+      if (currentUser?.id) {
+        const data = await AuthService.getDemandasAsignadas(Number(currentUser.id));
+        setDemandasInducidas(data || []);
+        
+        // Si es psicólogo, procesar pacientes asignados desde demandas
+        if (isPsicologo) {
+          const pacientesUnicos: Map<number, any> = new Map();
+          
+          // Procesar demandas para obtener pacientes asignados
+          for (const demanda of data || []) {
+            if (demanda.paciente_id && !pacientesUnicos.has(demanda.paciente_id)) {
+              try {
+                const paciente = await AuthService.getPacienteDetalle(demanda.paciente_id);
+                const familia = await AuthService.getFamiliaPorId(paciente.familia_id);
+                pacientesUnicos.set(demanda.paciente_id, {
+                  ...paciente,
+                  familia,
+                  demanda_id: demanda.demanda_id,
+                  fecha_demanda: demanda.fecha_demanda,
+                  estado_demanda: demanda.estado
+                });
+              } catch (e) {
+                console.error('Error cargando paciente:', demanda.paciente_id, e);
+              }
+            }
+          }
+          
+          // Ordenar por estado y fecha
+          const pacientesArray = Array.from(pacientesUnicos.values()).sort((a, b) => {
+            // Primero por estado (Pendiente/Asignada primero)
+            const estadoA = a.estado_demanda === 'Pendiente' || a.estado_demanda === 'Asignada' ? 0 : 1;
+            const estadoB = b.estado_demanda === 'Pendiente' || b.estado_demanda === 'Asignada' ? 0 : 1;
+            if (estadoA !== estadoB) return estadoA - estadoB;
+            // Luego por fecha
+            return new Date(b.fecha_demanda).getTime() - new Date(a.fecha_demanda).getTime();
+          });
+          
+          setPacientesAsignados(pacientesArray);
+        }
       }
     } catch (error) {
       console.error('Error cargando demandas inducidas:', error);
@@ -1322,7 +1364,7 @@ function ConsultasAsignadasView({ deviceType }: any) {
 
   useEffect(() => {
     loadDemandasInducidas();
-  }, []);
+  }, [isPsicologo]);
 
   // Filtrar demandas según la pestaña activa
   const getDemandasFiltradas = () => {
@@ -1352,7 +1394,27 @@ function ConsultasAsignadasView({ deviceType }: any) {
     return edad;
   };
 
-  if (selectedPatient) {
+  // Si es psicólogo y tiene paciente seleccionado, mostrar HC psicológica
+  if (isPsicologo && selectedPatient) {
+    return (
+      <HCPsicologiaView
+        paciente={selectedPatient}
+        atencion={selectedAtencion}
+        onSave={() => {
+          setSelectedPatient(null);
+          setSelectedAtencion(null);
+          loadDemandasInducidas();
+        }}
+        onCancel={() => {
+          setSelectedPatient(null);
+          setSelectedAtencion(null);
+        }}
+      />
+    );
+  }
+  
+  // Si no es psicólogo y tiene paciente seleccionado, mostrar HC medicina
+  if (!isPsicologo && selectedPatient) {
     return <HistoriaClinicaView patient={selectedPatient} onBack={() => setSelectedPatient(null)} deviceType={deviceType} />;
   }
 
@@ -1360,7 +1422,9 @@ function ConsultasAsignadasView({ deviceType }: any) {
     <div className="space-y-4 md:space-y-6">
       <ResponsiveCard>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-stone-900">Consultas Médicas</h3>
+          <h3 className="font-semibold text-stone-900">
+            {isPsicologo ? 'BD Pacientes Asignados' : 'Consultas Médicas'}
+          </h3>
           <div className="flex gap-2">
             <button className="p-2 rounded-lg border border-stone-200 hover:bg-stone-50">
               <Filter className="w-4 h-4" />
@@ -1395,10 +1459,69 @@ function ConsultasAsignadasView({ deviceType }: any) {
           </button>
         </div>
 
-        {/* Contenido de las pestañas */}
-        {activeTab === 'demandas' ? (
+        {/* Contenido específico para psicólogo */}
+        {isPsicologo ? (
           <div className="space-y-3">
             {loading ? (
+              <div className="text-center py-8">
+                <div className="text-sm text-stone-500">Cargando pacientes asignados...</div>
+              </div>
+            ) : pacientesAsignados.length === 0 ? (
+              <div className="text-center py-8 text-stone-500">
+                No hay pacientes asignados para consulta psicológica
+              </div>
+            ) : (
+              pacientesAsignados.map((paciente) => (
+                <div
+                  key={paciente.paciente_id}
+                  onClick={async () => {
+                    setSelectedPatient(paciente);
+                    // Buscar si ya existe una atención en proceso para este paciente
+                    try {
+                      const hcPaciente = await AuthService.getHCPsicologiaPaciente(paciente.paciente_id);
+                      const atencionEnProceso = hcPaciente.find((hc: any) => hc.estado === 'En proceso');
+                      if (atencionEnProceso) {
+                        setSelectedAtencion(atencionEnProceso);
+                      }
+                    } catch (e) {
+                      console.error('Error buscando HC existente:', e);
+                    }
+                  }}
+                  className="p-4 bg-stone-50 rounded-lg border border-stone-200 hover:border-san-marino hover:shadow-soft cursor-pointer transition-all"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="font-medium text-stone-900 mb-1">
+                        {paciente.primer_nombre} {paciente.primer_apellido}
+                      </div>
+                      <div className="text-sm text-stone-600 mb-2">
+                        {paciente.tipo_documento} {paciente.numero_documento} • 
+                        Familia: {paciente.familia?.apellido_principal}
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <ResponsiveBadge tone={paciente.estado_demanda === 'Pendiente' || paciente.estado_demanda === 'Asignada' ? 'warning' : 'neutral'}>
+                          {paciente.estado_demanda}
+                        </ResponsiveBadge>
+                        {paciente.fecha_demanda && (
+                          <span className="text-xs text-stone-500">
+                            {new Date(paciente.fecha_demanda).toLocaleDateString()}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-stone-400 flex-shrink-0 mt-1" />
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        ) : (
+          /* Contenido para otros roles (médico, etc.) */
+          <>
+            {/* Contenido de las pestañas */}
+            {activeTab === 'demandas' && (
+              <div className="space-y-3">
+                {loading ? (
               <div className="text-center py-8">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-bondi-500 mx-auto"></div>
                 <span className="ml-3 text-stone-600">Cargando demandas...</span>
@@ -1472,72 +1595,8 @@ function ConsultasAsignadasView({ deviceType }: any) {
               ))
             )}
           </div>
-        ) : (
-          <div className="space-y-3">
-            {loading ? (
-              <div className="text-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-bondi-500 mx-auto"></div>
-                <span className="ml-3 text-stone-600">Cargando consultas...</span>
-              </div>
-            ) : demandasFiltradas.length === 0 ? (
-              <div className="text-center py-8">
-                <div className="text-sm text-stone-500 mb-2">No hay consultas programadas</div>
-                <div className="text-xs text-stone-400">
-                  Las consultas aparecerán aquí cuando tengas demandas asignadas pendientes
-                </div>
-              </div>
-            ) : (
-              demandasFiltradas.map((demanda) => {
-                const edad = calcularEdad(demanda.fecha_nacimiento);
-                const fechaDemanda = new Date(demanda.fecha_demanda);
-                const horaFormato = fechaDemanda.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-                const esUrgente = demanda.estado === 'Asignada' && new Date(demanda.fecha_demanda) <= new Date();
-                
-                return (
-                  <button
-                    key={demanda.demanda_id}
-                    onClick={() => setSelectedPatient({
-                      id: demanda.paciente_id,
-                      nombre: `${demanda.primer_nombre || ''} ${demanda.primer_apellido || ''}`.trim(),
-                      documento: demanda.numero_documento,
-                      edad: edad,
-                      demanda: demanda,
-                      fecha_nacimiento: demanda.fecha_nacimiento
-                    })}
-                    className="w-full p-4 bg-stone-50 rounded-xl text-left hover:bg-stone-100 transition-colors"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h4 className="font-medium text-stone-900">
-                            {demanda.primer_nombre || ''} {demanda.primer_apellido || ''}
-                          </h4>
-                          {esUrgente && <ResponsiveBadge tone="rose">Urgente</ResponsiveBadge>}
-                        </div>
-                        <p className="text-sm text-stone-500 mb-2">
-                          {demanda.numero_documento} {edad ? `• ${edad} años` : ''} • Familia {demanda.apellido_principal}
-                        </p>
-                        <div className="flex items-center gap-2">
-                          <Clock className="w-4 h-4 text-stone-400" />
-                          <span className="text-sm text-stone-600">{horaFormato}</span>
-                          <span className="text-xs text-stone-400">
-                            {fechaDemanda.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })}
-                          </span>
-                          <ResponsiveBadge tone={
-                            demanda.estado === 'Completada' || demanda.estado === 'Realizada' ? 'health' :
-                            demanda.estado === 'En curso' || demanda.estado === 'Asignada' ? 'admin' : 'warning'
-                          }>
-                            {demanda.estado}
-                          </ResponsiveBadge>
-                        </div>
-                      </div>
-                      <ChevronRight className="w-5 h-5 text-stone-400" />
-                    </div>
-                  </button>
-                );
-              })
             )}
-          </div>
+          </>
         )}
       </ResponsiveCard>
     </div>
@@ -3433,23 +3492,33 @@ ${examenesSolicitados || 'N/A'}
 }
 
 function ConsultasRealizadasView({ deviceType }: any) {
+  const { user } = useAuth();
+  const isPsicologo = user?.role === 'psicologo';
   const [hcCompletadas, setHcCompletadas] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filtroDesde, setFiltroDesde] = useState<string>('');
   const [filtroHasta, setFiltroHasta] = useState<string>('');
   const [selectedHC, setSelectedHC] = useState<any>(null);
+  const [selectedPaciente, setSelectedPaciente] = useState<any>(null);
 
   const loadHCCompletadas = async () => {
     try {
       setLoading(true);
-      const user = AuthService.getCurrentUser();
-      if (user?.id) {
-        const data = await AuthService.getHCCompletadas(
-          Number(user.id),
-          filtroDesde || undefined,
-          filtroHasta || undefined
-        );
-        setHcCompletadas(data || []);
+      const currentUser = AuthService.getCurrentUser();
+      if (currentUser?.id) {
+        if (isPsicologo) {
+          // Para psicólogo: cargar solo HC psicológicas completadas
+          const data = await AuthService.getHCPsicologiaCompletadas(Number(currentUser.id));
+          setHcCompletadas(data || []);
+        } else {
+          // Para otros roles: cargar HC medicina completadas
+          const data = await AuthService.getHCCompletadas(
+            Number(currentUser.id),
+            filtroDesde || undefined,
+            filtroHasta || undefined
+          );
+          setHcCompletadas(data || []);
+        }
       }
     } catch (error) {
       console.error('Error cargando HC completadas:', error);
@@ -3460,13 +3529,37 @@ function ConsultasRealizadasView({ deviceType }: any) {
 
   useEffect(() => {
     loadHCCompletadas();
-  }, [filtroDesde, filtroHasta]);
+  }, [filtroDesde, filtroHasta, isPsicologo]);
 
   const getNombreCompleto = (hc: any) => {
+    if (isPsicologo) {
+      return hc.paciente_nombre || 'Paciente';
+    }
     return `${hc.primer_nombre || ''} ${hc.segundo_nombre || ''} ${hc.primer_apellido || ''} ${hc.segundo_apellido || ''}`.trim();
   };
 
-  if (selectedHC) {
+  // Si es psicólogo y tiene HC seleccionada, mostrar HC psicológica
+  if (isPsicologo && selectedHC) {
+    return (
+      <HCPsicologiaView
+        paciente={{
+          paciente_id: selectedHC.paciente_id,
+          primer_nombre: selectedHC.paciente_nombre?.split(' ')[0] || '',
+          primer_apellido: selectedHC.paciente_nombre?.split(' ').slice(1).join(' ') || '',
+          tipo_documento: 'CC',
+          numero_documento: selectedHC.numero_documento || ''
+        }}
+        atencion={selectedHC}
+        onSave={() => {
+          setSelectedHC(null);
+          loadHCCompletadas();
+        }}
+        onCancel={() => setSelectedHC(null)}
+      />
+    );
+  }
+
+  if (!isPsicologo && selectedHC) {
     return (
       <div className="space-y-4 md:space-y-6">
         <ResponsiveCard>
@@ -3507,7 +3600,9 @@ function ConsultasRealizadasView({ deviceType }: any) {
   return (
     <div className="space-y-4 md:space-y-6">
       <ResponsiveCard>
-        <h3 className="font-semibold text-stone-900 mb-4">Consultas Realizadas</h3>
+        <h3 className="font-semibold text-stone-900 mb-4">
+          {isPsicologo ? 'HC Psicológicas por mí - Completadas' : 'Consultas Realizadas'}
+        </h3>
         
         <div className="space-y-3 mb-4">
           <div className={`grid gap-3 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-2'}`}>
@@ -3566,10 +3661,18 @@ function ConsultasRealizadasView({ deviceType }: any) {
                         })}
                       </span>
                     </div>
-                    {hc.diagnosticos_cie10 && (
-                      <div className="mt-2">
-                        <ResponsiveBadge tone="health">{hc.diagnosticos_cie10}</ResponsiveBadge>
-                      </div>
+                    {isPsicologo ? (
+                      hc.diagnosticos_dsm5 && (
+                        <div className="mt-2">
+                          <ResponsiveBadge tone="health">{hc.diagnosticos_dsm5}</ResponsiveBadge>
+                        </div>
+                      )
+                    ) : (
+                      hc.diagnosticos_cie10 && (
+                        <div className="mt-2">
+                          <ResponsiveBadge tone="health">{hc.diagnosticos_cie10}</ResponsiveBadge>
+                        </div>
+                      )
                     )}
                   </div>
                   <ChevronRight className="w-5 h-5 text-stone-400" />
@@ -6660,6 +6763,968 @@ function DemandasInducidasView({ paciente, familia, onBack }: any) {
   );
 }
 
+// Vista: Lista de Caracterizaciones (para Auxiliar de Enfermería y Enfermero Jefe)
+function CaracterizacionesView({ deviceType, onSelectFamilia }: any) {
+  const [familias, setFamilias] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterEstado, setFilterEstado] = useState("");
+
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const data = await AuthService.getFamilias();
+        if (isMounted) {
+          // Enriquecer con información de caracterización
+          const familiasConCaracterizacion = await Promise.all(
+            (Array.isArray(data) ? data : []).map(async (familia: any) => {
+              try {
+                const caracterizacion = await AuthService.getCaracterizacionFamilia(familia.familia_id);
+                return {
+                  ...familia,
+                  tieneCaracterizacion: !!caracterizacion,
+                  fechaCaracterizacion: caracterizacion?.fecha_caracterizacion || null,
+                  caracterizacion: caracterizacion
+                };
+              } catch {
+                return { ...familia, tieneCaracterizacion: false, fechaCaracterizacion: null };
+              }
+            })
+          );
+          setFamilias(familiasConCaracterizacion);
+        }
+      } catch (e: any) {
+        console.error('Error cargando caracterizaciones:', e);
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    })();
+    return () => { isMounted = false; };
+  }, []);
+
+  const filteredFamilias = familias.filter((f) => {
+    const matchSearch = !searchTerm || 
+      f.apellido_principal?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      f.direccion?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchEstado = !filterEstado || 
+      (filterEstado === "con" && f.tieneCaracterizacion) ||
+      (filterEstado === "sin" && !f.tieneCaracterizacion);
+    return matchSearch && matchEstado;
+  });
+
+  return (
+    <div className="space-y-4 md:space-y-6">
+      <ResponsiveCard>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-eden-800">Caracterizaciones Familiares</h3>
+        </div>
+
+        {isLoading ? (
+          <div className="text-sm text-eden-500 py-8 text-center">Cargando caracterizaciones...</div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <ResponsiveField label="Buscar familia">
+                <ResponsiveInput
+                  value={searchTerm}
+                  onChange={(e: any) => setSearchTerm(e.target.value)}
+                  placeholder="Buscar por apellido o dirección..."
+                />
+              </ResponsiveField>
+              <ResponsiveField label="Filtrar por estado">
+                <ResponsiveSelect
+                  value={filterEstado}
+                  onChange={(e: any) => setFilterEstado(e.target.value)}
+                  options={[
+                    { value: '', label: 'Todas' },
+                    { value: 'con', label: 'Con caracterización' },
+                    { value: 'sin', label: 'Sin caracterización' }
+                  ]}
+                />
+              </ResponsiveField>
+            </div>
+
+            <div className="space-y-3">
+              {filteredFamilias.length === 0 ? (
+                <div className="text-center py-8 text-stone-500">
+                  No se encontraron familias
+                </div>
+              ) : (
+                filteredFamilias.map((familia) => (
+                  <div
+                    key={familia.familia_id}
+                    onClick={() => {
+                      if (onSelectFamilia) {
+                        onSelectFamilia(familia);
+                      } else {
+                        window.dispatchEvent(new CustomEvent('openFamiliaDetalle', { detail: familia }));
+                      }
+                    }}
+                    className="p-4 bg-stone-50 rounded-lg border border-stone-200 hover:border-san-marino hover:shadow-soft cursor-pointer transition-all"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="font-medium text-stone-900 mb-1">
+                          {familia.apellido_principal || 'Familia sin apellido'}
+                        </div>
+                        <div className="text-sm text-stone-600 mb-2">
+                          {familia.direccion || 'Sin dirección'}
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap mb-2">
+                          {familia.tieneCaracterizacion ? (
+                            <>
+                              <ResponsiveBadge tone="success">Caracterizada</ResponsiveBadge>
+                              {familia.fechaCaracterizacion && (
+                                <span className="text-xs text-stone-500">
+                                  {new Date(familia.fechaCaracterizacion).toLocaleDateString()}
+                                </span>
+                              )}
+                            </>
+                          ) : (
+                            <ResponsiveBadge tone="warning">Pendiente</ResponsiveBadge>
+                          )}
+                        </div>
+                        {familia.tieneCaracterizacion && (
+                          <div className="text-xs text-stone-500">
+                            Click para ver y editar caracterización o crear plan de cuidado
+                          </div>
+                        )}
+                      </div>
+                      <ChevronRight className="w-5 h-5 text-stone-400 flex-shrink-0 mt-1" />
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </>
+        )}
+      </ResponsiveCard>
+    </div>
+  );
+}
+
+// Vista: Lista de Planes de Cuidado (para Auxiliar de Enfermería)
+// Alineada con el flujo: BD Planes de Cuidado Familiar → Pacientes con PCF / Pacientes sin PCF
+function PlanesCuidadoListView({ deviceType }: any) {
+  const [planes, setPlanes] = useState<any[]>([]);
+  const [pacientesSinPCF, setPacientesSinPCF] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterEstado, setFilterEstado] = useState("");
+  const [activeTab, setActiveTab] = useState<'con' | 'sin'>('con');
+
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        // Obtener todas las familias primero
+        const familias = await AuthService.getFamilias();
+        const allPlanes: any[] = [];
+        const pacientesConPlan: Set<number> = new Set();
+        const allPacientes: any[] = [];
+        
+        // Para cada familia, obtener sus planes y pacientes
+        for (const familia of Array.isArray(familias) ? familias : []) {
+          try {
+            const pacientes = await AuthService.getPacientesByFamilia(familia.familia_id);
+            for (const paciente of pacientes) {
+              allPacientes.push({ ...paciente, familia });
+              try {
+                const planesPaciente = await AuthService.getPlanesCuidadoPaciente(paciente.paciente_id);
+                if (planesPaciente.length > 0) {
+                  pacientesConPlan.add(paciente.paciente_id);
+                  allPlanes.push(...planesPaciente.map((plan: any) => ({
+                    ...plan,
+                    familia,
+                    paciente
+                  })));
+                }
+              } catch (e) {
+                console.error('Error cargando planes del paciente:', paciente.paciente_id, e);
+              }
+            }
+          } catch (e) {
+            console.error('Error cargando pacientes de familia:', familia.familia_id, e);
+          }
+        }
+        
+        // Separar pacientes sin PCF
+        const sinPCF = allPacientes.filter(p => !pacientesConPlan.has(p.paciente_id));
+        
+        if (isMounted) {
+          setPlanes(allPlanes);
+          setPacientesSinPCF(sinPCF);
+        }
+      } catch (e: any) {
+        console.error('Error cargando planes:', e);
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    })();
+    return () => { isMounted = false; };
+  }, []);
+
+  const filteredPlanes = planes.filter((p) => {
+    const matchSearch = !searchTerm || 
+      p.paciente?.primer_nombre?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.paciente?.primer_apellido?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.familia?.apellido_principal?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchEstado = !filterEstado || p.estado === filterEstado;
+    return matchSearch && matchEstado;
+  });
+
+  const filteredPacientesSinPCF = pacientesSinPCF.filter((p) => {
+    return !searchTerm || 
+      p.primer_nombre?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.primer_apellido?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.familia?.apellido_principal?.toLowerCase().includes(searchTerm.toLowerCase());
+  });
+
+  return (
+    <div className="space-y-4 md:space-y-6">
+      <ResponsiveCard>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-eden-800">BD Planes de Cuidado Familiar</h3>
+        </div>
+
+        {/* Tabs para separar Con PCF / Sin PCF */}
+        <div className="flex gap-2 mb-4 border-b border-stone-200">
+          <button
+            onClick={() => setActiveTab('con')}
+            className={`px-4 py-2 text-sm font-medium transition-colors ${
+              activeTab === 'con'
+                ? 'border-b-2 border-san-marino text-san-marino-700'
+                : 'text-stone-600 hover:text-stone-900'
+            }`}
+          >
+            Pacientes con PCF ({planes.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('sin')}
+            className={`px-4 py-2 text-sm font-medium transition-colors ${
+              activeTab === 'sin'
+                ? 'border-b-2 border-san-marino text-san-marino-700'
+                : 'text-stone-600 hover:text-stone-900'
+            }`}
+          >
+            Pacientes sin PCF ({pacientesSinPCF.length})
+          </button>
+        </div>
+
+        {isLoading ? (
+          <div className="text-sm text-eden-500 py-8 text-center">Cargando planes...</div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <ResponsiveField label="Buscar">
+                <ResponsiveInput
+                  value={searchTerm}
+                  onChange={(e: any) => setSearchTerm(e.target.value)}
+                  placeholder="Buscar por paciente o familia..."
+                />
+              </ResponsiveField>
+              {activeTab === 'con' && (
+                <ResponsiveField label="Filtrar por estado">
+                  <ResponsiveSelect
+                    value={filterEstado}
+                    onChange={(e: any) => setFilterEstado(e.target.value)}
+                    options={[
+                      { value: '', label: 'Todos' },
+                      { value: 'Activo', label: 'Activo' },
+                      { value: 'Completado', label: 'Completado' },
+                      { value: 'Cancelado', label: 'Cancelado' }
+                    ]}
+                  />
+                </ResponsiveField>
+              )}
+            </div>
+
+            {activeTab === 'con' ? (
+              /* PACIENTES CON PCF */
+              <div className="space-y-3">
+                {filteredPlanes.length === 0 ? (
+                  <div className="text-center py-8 text-stone-500">
+                    No se encontraron planes de cuidado
+                  </div>
+                ) : (
+                  filteredPlanes.map((plan) => (
+                    <div
+                      key={plan.plan_id}
+                      onClick={() => {
+                        window.dispatchEvent(new CustomEvent('openPlanesCuidado', {
+                          detail: { paciente: plan.paciente, familia: plan.familia }
+                        }));
+                      }}
+                      className="p-4 bg-stone-50 rounded-lg border border-stone-200 hover:border-san-marino hover:shadow-soft cursor-pointer transition-all"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="font-medium text-stone-900 mb-1">
+                            {plan.paciente?.primer_nombre} {plan.paciente?.primer_apellido}
+                          </div>
+                          <div className="text-sm text-stone-600 mb-2">
+                            Familia: {plan.familia?.apellido_principal}
+                          </div>
+                          <div className="flex items-center gap-2 flex-wrap mb-2">
+                            <ResponsiveBadge tone={plan.estado === 'Activo' ? 'success' : plan.estado === 'Completado' ? 'admin' : 'neutral'}>
+                              {plan.estado || 'Sin estado'}
+                            </ResponsiveBadge>
+                            {plan.fecha_entrega && (
+                              <span className="text-xs text-stone-500">
+                                Entrega: {new Date(plan.fecha_entrega).toLocaleDateString()}
+                              </span>
+                            )}
+                          </div>
+                          {plan.condicion_identificada && (
+                            <div className="text-xs text-stone-600 mt-2 line-clamp-2">
+                              {plan.condicion_identificada}
+                            </div>
+                          )}
+                        </div>
+                        <ChevronRight className="w-5 h-5 text-stone-400 flex-shrink-0 mt-1" />
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            ) : (
+              /* PACIENTES SIN PCF - Agregar PCF */
+              <div className="space-y-3">
+                {filteredPacientesSinPCF.length === 0 ? (
+                  <div className="text-center py-8 text-stone-500">
+                    Todos los pacientes tienen un Plan de Cuidado Familiar
+                  </div>
+                ) : (
+                  filteredPacientesSinPCF.map((paciente) => (
+                    <div
+                      key={paciente.paciente_id}
+                      className="p-4 bg-stone-50 rounded-lg border border-stone-200 hover:border-janna-300 transition-all"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="font-medium text-stone-900 mb-1">
+                            {paciente.primer_nombre} {paciente.primer_apellido}
+                          </div>
+                          <div className="text-sm text-stone-600 mb-2">
+                            Familia: {paciente.familia?.apellido_principal}
+                          </div>
+                          <ResponsiveBadge tone="warning">Sin PCF</ResponsiveBadge>
+                        </div>
+                        <ResponsiveButton
+                          variant="primary"
+                          size="sm"
+                          onClick={() => {
+                            window.dispatchEvent(new CustomEvent('openPlanesCuidado', {
+                              detail: { paciente, familia: paciente.familia }
+                            }));
+                          }}
+                        >
+                          Agregar PCF
+                        </ResponsiveButton>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </ResponsiveCard>
+    </div>
+  );
+}
+
+// Vista: Dashboard Auxiliar de Enfermería
+function DashboardAuxiliarView({ deviceType }: any) {
+  const [stats, setStats] = useState({
+    totalFamilias: 0,
+    familiasCaracterizadas: 0,
+    planesActivos: 0,
+    demandasPendientes: 0
+  });
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const familias = await AuthService.getFamilias();
+        const familiasArray = Array.isArray(familias) ? familias : [];
+        
+        let caracterizadas = 0;
+        let totalPlanes = 0;
+        let demandasPendientes = 0;
+
+        for (const familia of familiasArray) {
+          // Verificar caracterización
+          try {
+            const caracterizacion = await AuthService.getCaracterizacionFamilia(familia.familia_id);
+            if (caracterizacion) caracterizadas++;
+          } catch {}
+
+          // Contar planes y demandas
+          try {
+            const pacientes = await AuthService.getPacientesByFamilia(familia.familia_id);
+            for (const paciente of pacientes) {
+              try {
+                const planes = await AuthService.getPlanesCuidadoPaciente(paciente.paciente_id);
+                totalPlanes += planes.filter((p: any) => p.estado === 'Activo').length;
+                
+                const demandas = await AuthService.getDemandasInducidasPaciente(paciente.paciente_id);
+                demandasPendientes += demandas.filter((d: any) => d.estado === 'Pendiente' || d.estado === 'Asignada').length;
+              } catch {}
+            }
+          } catch {}
+        }
+
+        if (isMounted) {
+          setStats({
+            totalFamilias: familiasArray.length,
+            familiasCaracterizadas: caracterizadas,
+            planesActivos: totalPlanes,
+            demandasPendientes
+          });
+        }
+      } catch (e) {
+        console.error('Error cargando estadísticas:', e);
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    })();
+    return () => { isMounted = false; };
+  }, []);
+
+  return (
+    <div className="space-y-4 md:space-y-6">
+      <ResponsiveCard>
+        <h3 className="font-semibold text-eden-800 mb-4">Dashboard - Auxiliar de Enfermería</h3>
+        
+        {isLoading ? (
+          <div className="text-sm text-eden-500 py-8 text-center">Cargando estadísticas...</div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="p-4 bg-bondi-50 rounded-lg border border-bondi-200">
+              <div className="text-sm text-bondi-600 mb-1">Total Familias</div>
+              <div className="text-2xl font-bold text-bondi-700">{stats.totalFamilias}</div>
+            </div>
+            <div className="p-4 bg-san-marino-50 rounded-lg border border-san-marino-200">
+              <div className="text-sm text-san-marino-600 mb-1">Caracterizadas</div>
+              <div className="text-2xl font-bold text-san-marino-700">
+                {stats.familiasCaracterizadas}
+              </div>
+              <div className="text-xs text-san-marino-500 mt-1">
+                {stats.totalFamilias > 0 
+                  ? Math.round((stats.familiasCaracterizadas / stats.totalFamilias) * 100) 
+                  : 0}% completado
+              </div>
+            </div>
+            <div className="p-4 bg-eden-50 rounded-lg border border-eden-200">
+              <div className="text-sm text-eden-600 mb-1">Planes Activos</div>
+              <div className="text-2xl font-bold text-eden-700">{stats.planesActivos}</div>
+            </div>
+            <div className="p-4 bg-janna-50 rounded-lg border border-janna-200">
+              <div className="text-sm text-janna-600 mb-1">Demandas Pendientes</div>
+              <div className="text-2xl font-bold text-janna-700">{stats.demandasPendientes}</div>
+            </div>
+          </div>
+        )}
+      </ResponsiveCard>
+    </div>
+  );
+}
+
+// Vista: Dashboard de Enfermería
+function DashboardEnfermeriaView({ deviceType }: any) {
+  const { user } = useAuth();
+  const [stats, setStats] = useState({
+    totalFamilias: 0,
+    familiasCaracterizadas: 0,
+    planesActivos: 0,
+    consultasPendientes: 0,
+    pacientesAsignados: 0
+  });
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        // Obtener familias
+        const familias = await AuthService.getFamilias();
+        const familiasArray = Array.isArray(familias) ? familias : [];
+        
+        let caracterizadas = 0;
+        let totalPlanes = 0;
+        let consultasPendientes = 0;
+        const pacientesAsignadosSet = new Set<number>();
+
+        for (const familia of familiasArray) {
+          // Verificar caracterización
+          try {
+            const caracterizacion = await AuthService.getCaracterizacionFamilia(familia.familia_id);
+            if (caracterizacion) caracterizadas++;
+          } catch {}
+
+          // Contar planes activos
+          try {
+            const pacientes = await AuthService.getPacientesByFamilia(familia.familia_id);
+            for (const paciente of pacientes) {
+              const planes = await AuthService.getPlanesCuidadoPaciente(paciente.paciente_id);
+              const activos = planes.filter((p: any) => p.estado === 'Activo');
+              totalPlanes += activos.length;
+            }
+          } catch {}
+        }
+
+        // Obtener demandas asignadas si hay usuario
+        if (user?.id) {
+          try {
+            const demandas = await AuthService.getDemandasAsignadas(Number(user.id));
+            const demandasArray = Array.isArray(demandas) ? demandas : [];
+            consultasPendientes = demandasArray.filter((d: any) => d.estado === 'Pendiente' || d.estado === 'Asignada').length;
+            demandasArray.forEach((d: any) => {
+              if (d.paciente_id) pacientesAsignadosSet.add(d.paciente_id);
+            });
+          } catch {}
+        }
+
+        if (isMounted) {
+          setStats({
+            totalFamilias: familiasArray.length,
+            familiasCaracterizadas: caracterizadas,
+            planesActivos: totalPlanes,
+            consultasPendientes: consultasPendientes,
+            pacientesAsignados: pacientesAsignadosSet.size
+          });
+        }
+      } catch (e) {
+        console.error('Error cargando estadísticas:', e);
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    })();
+    return () => { isMounted = false; };
+  }, [user]);
+
+  return (
+    <div className="space-y-4 md:space-y-6">
+      <ResponsiveCard>
+        <h3 className="font-semibold text-eden-800 mb-4">Dashboard - Enfermería</h3>
+        <p className="text-sm text-stone-600 mb-4">
+          Información epidemiológica y general de enfermería en territorios
+        </p>
+        
+        {isLoading ? (
+          <div className="text-sm text-eden-500 py-8 text-center">Cargando estadísticas...</div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="p-4 bg-bondi-50 rounded-lg border border-bondi-200">
+              <div className="text-sm text-bondi-600 mb-1">Total Familias</div>
+              <div className="text-2xl font-bold text-bondi-700">{stats.totalFamilias}</div>
+            </div>
+            <div className="p-4 bg-san-marino-50 rounded-lg border border-san-marino-200">
+              <div className="text-sm text-san-marino-600 mb-1">Caracterizadas</div>
+              <div className="text-2xl font-bold text-san-marino-700">
+                {stats.familiasCaracterizadas}
+              </div>
+            </div>
+            <div className="p-4 bg-janna-50 rounded-lg border border-janna-200">
+              <div className="text-sm text-janna-600 mb-1">Planes Activos</div>
+              <div className="text-2xl font-bold text-janna-700">{stats.planesActivos}</div>
+            </div>
+            <div className="p-4 bg-eden-50 rounded-lg border border-eden-200">
+              <div className="text-sm text-eden-600 mb-1">Consultas Pendientes</div>
+              <div className="text-2xl font-bold text-eden-700">{stats.consultasPendientes}</div>
+            </div>
+            <div className="p-4 bg-stone-50 rounded-lg border border-stone-200">
+              <div className="text-sm text-stone-600 mb-1">Pacientes Asignados</div>
+              <div className="text-2xl font-bold text-stone-700">{stats.pacientesAsignados}</div>
+            </div>
+          </div>
+        )}
+      </ResponsiveCard>
+    </div>
+  );
+}
+
+// Vista: Dashboard de Psicología
+function DashboardPsicologiaView({ deviceType }: any) {
+  const { user } = useAuth();
+  const [stats, setStats] = useState({
+    totalConsultas: 0,
+    consultasCompletadas: 0,
+    consultasPendientes: 0,
+    pacientesAtendidos: 0
+  });
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        if (!user?.id) return;
+        
+        // Obtener HC psicológicas completadas
+        const hcCompletadas = await AuthService.getHCPsicologiaCompletadas(Number(user.id));
+        const completadas = Array.isArray(hcCompletadas) ? hcCompletadas : [];
+        
+        // Obtener demandas asignadas
+        const demandas = await AuthService.getDemandasAsignadas(Number(user.id));
+        const demandasArray = Array.isArray(demandas) ? demandas : [];
+        
+        // Obtener pacientes únicos atendidos
+        const pacientesUnicos = new Set(completadas.map((hc: any) => hc.paciente_id));
+        
+        if (isMounted) {
+          setStats({
+            totalConsultas: completadas.length + demandasArray.length,
+            consultasCompletadas: completadas.length,
+            consultasPendientes: demandasArray.filter((d: any) => d.estado === 'Pendiente' || d.estado === 'Asignada').length,
+            pacientesAtendidos: pacientesUnicos.size
+          });
+        }
+      } catch (e) {
+        console.error('Error cargando estadísticas:', e);
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    })();
+    return () => { isMounted = false; };
+  }, [user]);
+
+  return (
+    <div className="space-y-4 md:space-y-6">
+      <ResponsiveCard>
+        <h3 className="font-semibold text-eden-800 mb-4">Dashboard - Psicología</h3>
+        <p className="text-sm text-stone-600 mb-4">
+          Información epidemiológica y general de salud mental en territorios
+        </p>
+        
+        {isLoading ? (
+          <div className="text-sm text-eden-500 py-8 text-center">Cargando estadísticas...</div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="p-4 bg-bondi-50 rounded-lg border border-bondi-200">
+              <div className="text-sm text-bondi-600 mb-1">Total Consultas</div>
+              <div className="text-2xl font-bold text-bondi-700">{stats.totalConsultas}</div>
+            </div>
+            <div className="p-4 bg-san-marino-50 rounded-lg border border-san-marino-200">
+              <div className="text-sm text-san-marino-600 mb-1">Completadas</div>
+              <div className="text-2xl font-bold text-san-marino-700">
+                {stats.consultasCompletadas}
+              </div>
+            </div>
+            <div className="p-4 bg-janna-50 rounded-lg border border-janna-200">
+              <div className="text-sm text-janna-600 mb-1">Pendientes</div>
+              <div className="text-2xl font-bold text-janna-700">{stats.consultasPendientes}</div>
+            </div>
+            <div className="p-4 bg-eden-50 rounded-lg border border-eden-200">
+              <div className="text-sm text-eden-600 mb-1">Pacientes Atendidos</div>
+              <div className="text-2xl font-bold text-eden-700">{stats.pacientesAtendidos}</div>
+            </div>
+          </div>
+        )}
+      </ResponsiveCard>
+    </div>
+  );
+}
+
+// Vista: Educación en Salud
+function EducacionSaludView({ deviceType }: any) {
+  const [actividades, setActividades] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterTerritorio, setFilterTerritorio] = useState("");
+
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        // Por ahora, estructura base para futuras actividades de educación en salud
+        // TODO: Implementar endpoint backend para actividades de educación en salud
+        const mockActividades = [
+          {
+            id: 1,
+            tema: 'Salud Mental y Bienestar',
+            horario: '2024-01-15 10:00',
+            territorio: 'Territorio 1',
+            personas: ['Juan Pérez', 'María García'],
+            estado: 'Programada'
+          }
+        ];
+        
+        if (isMounted) setActividades(mockActividades);
+      } catch (e) {
+        console.error('Error cargando actividades:', e);
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    })();
+    return () => { isMounted = false; };
+  }, []);
+
+  const filteredActividades = actividades.filter((a) => {
+    const matchSearch = !searchTerm || 
+      a.tema?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      a.territorio?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchTerritorio = !filterTerritorio || a.territorio === filterTerritorio;
+    return matchSearch && matchTerritorio;
+  });
+
+  return (
+    <div className="space-y-4 md:space-y-6">
+      <ResponsiveCard>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-eden-800">Asignaciones de Actividades de Educación en Salud</h3>
+        </div>
+
+        {isLoading ? (
+          <div className="text-sm text-eden-500 py-8 text-center">Cargando actividades...</div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <ResponsiveField label="Buscar">
+                <ResponsiveInput
+                  value={searchTerm}
+                  onChange={(e: any) => setSearchTerm(e.target.value)}
+                  placeholder="Buscar por tema o territorio..."
+                />
+              </ResponsiveField>
+              <ResponsiveField label="Filtrar por territorio">
+                <ResponsiveInput
+                  value={filterTerritorio}
+                  onChange={(e: any) => setFilterTerritorio(e.target.value)}
+                  placeholder="Territorio..."
+                />
+              </ResponsiveField>
+            </div>
+
+            <div className="space-y-3">
+              {filteredActividades.length === 0 ? (
+                <div className="text-center py-8 text-stone-500">
+                  No hay actividades de educación en salud registradas
+                </div>
+              ) : (
+                filteredActividades.map((actividad) => (
+                  <div
+                    key={actividad.id}
+                    className="p-4 bg-stone-50 rounded-lg border border-stone-200"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="font-medium text-stone-900 mb-1">
+                          {actividad.tema}
+                        </div>
+                        <div className="text-sm text-stone-600 mb-2">
+                          <div>Horario: {actividad.horario}</div>
+                          <div>Territorio: {actividad.territorio}</div>
+                          {actividad.personas && actividad.personas.length > 0 && (
+                            <div className="mt-1">
+                              <span className="text-xs text-stone-500">Personas: </span>
+                              {actividad.personas.join(', ')}
+                            </div>
+                          )}
+                        </div>
+                        <ResponsiveBadge tone={actividad.estado === 'Programada' ? 'success' : 'neutral'}>
+                          {actividad.estado}
+                        </ResponsiveBadge>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </>
+        )}
+      </ResponsiveCard>
+    </div>
+  );
+}
+
+// Vista: Historia Clínica Psicológica
+function HCPsicologiaView({ atencion, paciente, onSave, onCancel }: any) {
+  const { user } = useAuth();
+  const [form, setForm] = useState<any>({
+    motivo_consulta: '',
+    analisis_funcional: '',
+    antecedentes_psicologicos: '',
+    evaluacion_mental: '',
+    diagnosticos_dsm5: '',
+    plan_terapeutico: '',
+    tecnicas_aplicadas: '',
+    proxima_sesion: ''
+  });
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (atencion?.atencion_id) {
+      loadHCPsicologia();
+    }
+  }, [atencion?.atencion_id]);
+
+  const loadHCPsicologia = async () => {
+    try {
+      const hc = await AuthService.getHCPsicologia(atencion.atencion_id);
+      if (hc) {
+        setForm({
+          motivo_consulta: hc.motivo_consulta || '',
+          analisis_funcional: hc.analisis_funcional || '',
+          antecedentes_psicologicos: hc.antecedentes_psicologicos || '',
+          evaluacion_mental: hc.evaluacion_mental || '',
+          diagnosticos_dsm5: hc.diagnosticos_dsm5 || '',
+          plan_terapeutico: hc.plan_terapeutico || '',
+          tecnicas_aplicadas: hc.tecnicas_aplicadas || '',
+          proxima_sesion: hc.proxima_sesion || ''
+        });
+      }
+    } catch (error) {
+      console.error('Error cargando HC psicológica:', error);
+    }
+  };
+
+  const handleSave = async () => {
+    try {
+      setLoading(true);
+      
+      if (atencion?.atencion_id) {
+        // Actualizar
+        await AuthService.updateHCPsicologia(atencion.atencion_id, form);
+      } else {
+        // Crear nueva
+        await AuthService.crearHCPsicologia({
+          paciente_id: paciente.paciente_id,
+          usuario_id: Number(user?.id),
+          fecha_atencion: new Date().toISOString().split('T')[0],
+          ...form
+        });
+      }
+      
+      if (onSave) onSave();
+    } catch (error: any) {
+      console.error('Error guardando HC psicológica:', error);
+      alert('Error guardando historia clínica psicológica: ' + (error.message || 'Error desconocido'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4 md:space-y-6">
+      <ResponsiveCard>
+        <div className="flex items-center gap-3 mb-4">
+          {onCancel && (
+            <button onClick={onCancel} className="p-2 -ml-2 rounded-lg hover:bg-stone-100">
+              <ChevronRight className="w-5 h-5 rotate-180" />
+            </button>
+          )}
+          <h3 className="font-semibold text-stone-900">Historia Clínica Psicológica</h3>
+        </div>
+
+        {paciente && (
+          <div className="mb-4 p-3 bg-stone-50 rounded-lg">
+            <div className="text-sm font-medium text-stone-900">
+              {paciente.primer_nombre} {paciente.primer_apellido}
+            </div>
+            <div className="text-xs text-stone-600">
+              {paciente.tipo_documento} {paciente.numero_documento}
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-4">
+          <ResponsiveField label="Motivo de Consulta" required>
+            <textarea
+              className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none"
+              rows={3}
+              value={form.motivo_consulta}
+              onChange={(e: any) => setForm({ ...form, motivo_consulta: e.target.value })}
+              placeholder="Describa el motivo de consulta..."
+            />
+          </ResponsiveField>
+
+          <ResponsiveField label="Análisis Funcional">
+            <textarea
+              className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none"
+              rows={4}
+              value={form.analisis_funcional}
+              onChange={(e: any) => setForm({ ...form, analisis_funcional: e.target.value })}
+              placeholder="Análisis funcional del comportamiento..."
+            />
+          </ResponsiveField>
+
+          <ResponsiveField label="Antecedentes Psicológicos">
+            <textarea
+              className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none"
+              rows={3}
+              value={form.antecedentes_psicologicos}
+              onChange={(e: any) => setForm({ ...form, antecedentes_psicologicos: e.target.value })}
+              placeholder="Antecedentes psicológicos relevantes..."
+            />
+          </ResponsiveField>
+
+          <ResponsiveField label="Evaluación Mental">
+            <textarea
+              className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none"
+              rows={5}
+              value={form.evaluacion_mental}
+              onChange={(e: any) => setForm({ ...form, evaluacion_mental: e.target.value })}
+              placeholder="Evaluación del estado mental, afecto, pensamiento, percepción, conciencia, orientación, memoria, atención, lenguaje..."
+            />
+          </ResponsiveField>
+
+          <ResponsiveField label="Diagnóstico (DSM-5)">
+            <ResponsiveInput
+              value={form.diagnosticos_dsm5}
+              onChange={(e: any) => setForm({ ...form, diagnosticos_dsm5: e.target.value })}
+              placeholder="Ej: F41.1 - Trastorno de ansiedad generalizada"
+            />
+          </ResponsiveField>
+
+          <ResponsiveField label="Plan Terapéutico">
+            <textarea
+              className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none"
+              rows={4}
+              value={form.plan_terapeutico}
+              onChange={(e: any) => setForm({ ...form, plan_terapeutico: e.target.value })}
+              placeholder="Plan de tratamiento e intervención..."
+            />
+          </ResponsiveField>
+
+          <ResponsiveField label="Técnicas Aplicadas">
+            <textarea
+              className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none"
+              rows={3}
+              value={form.tecnicas_aplicadas}
+              onChange={(e: any) => setForm({ ...form, tecnicas_aplicadas: e.target.value })}
+              placeholder="Técnicas terapéuticas aplicadas en esta sesión..."
+            />
+          </ResponsiveField>
+
+          <ResponsiveField label="Próxima Sesión">
+            <ResponsiveInput
+              type="date"
+              value={form.proxima_sesion}
+              onChange={(e: any) => setForm({ ...form, proxima_sesion: e.target.value })}
+            />
+          </ResponsiveField>
+        </div>
+
+        <div className="flex gap-3 pt-4">
+          {onCancel && (
+            <ResponsiveButton variant="secondary" onClick={onCancel} disabled={loading}>
+              Cancelar
+            </ResponsiveButton>
+          )}
+          <ResponsiveButton onClick={handleSave} disabled={loading}>
+            {loading ? 'Guardando...' : 'Guardar Historia Clínica'}
+          </ResponsiveButton>
+        </div>
+      </ResponsiveCard>
+    </div>
+  );
+}
+
 // Componente principal
 export default function App() {
   const { user, isAuthenticated, isLoading, login, logout } = useAuth();
@@ -6791,11 +7856,34 @@ export default function App() {
               ) : (
                 <ResponsiveCard>Error: Familia no seleccionada.</ResponsiveCard>
               );
+      case "caracterizaciones":
+        return <CaracterizacionesView 
+          deviceType={deviceType}
+          onSelectFamilia={(familia: any) => {
+            setSelectedFamilia(familia);
+            // Si tiene caracterización, permite ver/editar; si no, crear
+            if (familia.tieneCaracterizacion) {
+              setCurrentPage("caracterizacion"); // Ver/Editar
+            } else {
+              setCurrentPage("caracterizacion"); // Crear nueva
+            }
+          }}
+        />;
+      case "planes-cuidado":
+        return <PlanesCuidadoListView deviceType={deviceType} />;
+      case "dashboard-auxiliar":
+        return <DashboardAuxiliarView deviceType={deviceType} />;
       case "consultas-asignadas":
       case "terapias-asignadas":
         return <ConsultasAsignadasView deviceType={deviceType} />;
       case "consultas-realizadas":
         return <ConsultasRealizadasView deviceType={deviceType} />;
+      case "dashboard-psicologia":
+        return <DashboardPsicologiaView deviceType={deviceType} />;
+      case "dashboard-enfermeria":
+        return <DashboardEnfermeriaView deviceType={deviceType} />;
+      case "educacion-salud":
+        return <EducacionSaludView deviceType={deviceType} />;
       case "bitacora":
         return <BitacoraView deviceType={deviceType} />;
       case "bd-pacientes":

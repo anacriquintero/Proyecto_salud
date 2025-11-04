@@ -768,6 +768,239 @@ app.put('/api/hc/medicina/:atencion_id', (req, res) => {
   });
 });
 
+// ==================== ENDPOINTS DE HC_PSICOLOGIA ====================
+
+// Crear nueva atención y historia clínica psicológica
+app.post('/api/hc/psicologia', (req, res) => {
+  const {
+    paciente_id,
+    usuario_id,
+    fecha_atencion,
+    motivo_consulta,
+    analisis_funcional,
+    antecedentes_psicologicos,
+    evaluacion_mental,
+    diagnosticos_dsm5,
+    plan_terapeutico,
+    tecnicas_aplicadas,
+    proxima_sesion
+  } = req.body;
+
+  if (!paciente_id || !usuario_id || !motivo_consulta) {
+    return res.status(400).json({ 
+      error: 'Datos requeridos: paciente_id, usuario_id, motivo_consulta' 
+    });
+  }
+
+  // Iniciar transacción
+  db.serialize(() => {
+    // 1. Crear atención clínica
+    const insertAtencion = `
+      INSERT INTO Atenciones_Clinicas (
+        paciente_id, usuario_id, fecha_atencion, tipo_atencion, estado
+      ) VALUES (?, ?, ?, ?, ?)
+    `;
+
+    const fechaAtencion = fecha_atencion || new Date().toISOString().split('T')[0];
+
+    db.run(insertAtencion, [
+      paciente_id,
+      usuario_id,
+      fechaAtencion,
+      'Consulta Psicológica',
+      'En proceso'
+    ], function(err) {
+      if (err) {
+        console.error('Error creando atención:', err);
+        return res.status(500).json({ error: 'Error creando atención clínica: ' + err.message });
+      }
+
+      const atencionId = this.lastID;
+
+      // 2. Crear historia clínica psicológica asociada
+      const insertHC = `
+        INSERT INTO HC_Psicologia (
+          atencion_id, motivo_consulta, analisis_funcional,
+          antecedentes_psicologicos, evaluacion_mental,
+          diagnosticos_dsm5, plan_terapeutico,
+          tecnicas_aplicadas, proxima_sesion
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `;
+
+      db.run(insertHC, [
+        atencionId,
+        motivo_consulta || null,
+        analisis_funcional || null,
+        antecedentes_psicologicos || null,
+        evaluacion_mental || null,
+        diagnosticos_dsm5 || null,
+        plan_terapeutico || null,
+        tecnicas_aplicadas || null,
+        proxima_sesion || null
+      ], function(err) {
+        if (err) {
+          console.error('Error creando HC psicológica:', err);
+          return res.status(500).json({ error: 'Error creando historia clínica psicológica: ' + err.message });
+        }
+
+        res.status(201).json({
+          success: true,
+          atencion_id: atencionId,
+          message: 'Historia clínica psicológica creada exitosamente'
+        });
+      });
+    });
+  });
+});
+
+// Obtener historia clínica psicológica
+app.get('/api/hc/psicologia/:atencion_id', (req, res) => {
+  const { atencion_id } = req.params;
+  
+  const query = `
+    SELECT 
+      atencion_id, motivo_consulta, analisis_funcional,
+      antecedentes_psicologicos, evaluacion_mental,
+      diagnosticos_dsm5, plan_terapeutico,
+      tecnicas_aplicadas, proxima_sesion
+    FROM HC_Psicologia
+    WHERE atencion_id = ?
+  `;
+  
+  db.get(query, [atencion_id], (err, row) => {
+    if (err) {
+      console.error('Error obteniendo HC psicológica:', err);
+      return res.status(500).json({ error: 'Error obteniendo historia clínica psicológica' });
+    }
+    
+    if (!row) {
+      return res.status(404).json({ error: 'Historia clínica psicológica no encontrada' });
+    }
+    
+    res.json(row);
+  });
+});
+
+// Obtener historias clínicas psicológicas de un paciente
+app.get('/api/pacientes/:id/hc-psicologia', (req, res) => {
+  const { id } = req.params;
+  
+  const query = `
+    SELECT 
+      ac.atencion_id,
+      ac.fecha_atencion,
+      ac.estado,
+      u.nombre_completo as profesional_nombre,
+      hcp.motivo_consulta,
+      hcp.evaluacion_mental,
+      hcp.diagnosticos_dsm5,
+      hcp.proxima_sesion
+    FROM Atenciones_Clinicas ac
+    JOIN HC_Psicologia hcp ON ac.atencion_id = hcp.atencion_id
+    LEFT JOIN Usuarios u ON ac.usuario_id = u.usuario_id
+    WHERE ac.paciente_id = ? AND ac.tipo_atencion = 'Consulta Psicológica'
+    ORDER BY ac.fecha_atencion DESC, ac.atencion_id DESC
+  `;
+  
+  db.all(query, [id], (err, rows) => {
+    if (err) {
+      console.error('Error obteniendo HC psicológicas:', err);
+      return res.status(500).json({ error: 'Error obteniendo historias clínicas psicológicas' });
+    }
+    
+    res.json(rows || []);
+  });
+});
+
+// Obtener historias clínicas psicológicas completadas por un psicólogo
+app.get('/api/usuarios/:id/hc-psicologia-completadas', (req, res) => {
+  const { id } = req.params;
+  
+  const query = `
+    SELECT 
+      ac.atencion_id,
+      ac.fecha_atencion,
+      ac.estado,
+      p.paciente_id,
+      p.primer_nombre || ' ' || p.primer_apellido as paciente_nombre,
+      p.numero_documento,
+      f.apellido_principal as familia_apellido,
+      hcp.motivo_consulta,
+      hcp.evaluacion_mental,
+      hcp.diagnosticos_dsm5,
+      hcp.proxima_sesion
+    FROM Atenciones_Clinicas ac
+    JOIN HC_Psicologia hcp ON ac.atencion_id = hcp.atencion_id
+    JOIN Pacientes p ON ac.paciente_id = p.paciente_id
+    JOIN Familias f ON p.familia_id = f.familia_id
+    WHERE ac.usuario_id = ? 
+      AND ac.tipo_atencion = 'Consulta Psicológica'
+      AND ac.estado = 'Completada'
+    ORDER BY ac.fecha_atencion DESC, ac.atencion_id DESC
+  `;
+  
+  db.all(query, [id], (err, rows) => {
+    if (err) {
+      console.error('Error obteniendo HC psicológicas completadas:', err);
+      return res.status(500).json({ error: 'Error obteniendo historias clínicas completadas' });
+    }
+    
+    res.json(rows || []);
+  });
+});
+
+// Actualizar historia clínica psicológica
+app.put('/api/hc/psicologia/:atencion_id', (req, res) => {
+  const { atencion_id } = req.params;
+  const {
+    motivo_consulta,
+    analisis_funcional,
+    antecedentes_psicologicos,
+    evaluacion_mental,
+    diagnosticos_dsm5,
+    plan_terapeutico,
+    tecnicas_aplicadas,
+    proxima_sesion
+  } = req.body;
+
+  const query = `
+    UPDATE HC_Psicologia SET
+      motivo_consulta = ?,
+      analisis_funcional = ?,
+      antecedentes_psicologicos = ?,
+      evaluacion_mental = ?,
+      diagnosticos_dsm5 = ?,
+      plan_terapeutico = ?,
+      tecnicas_aplicadas = ?,
+      proxima_sesion = ?
+    WHERE atencion_id = ?
+  `;
+
+  db.run(query, [
+    motivo_consulta || null,
+    analisis_funcional || null,
+    antecedentes_psicologicos || null,
+    evaluacion_mental || null,
+    diagnosticos_dsm5 || null,
+    plan_terapeutico || null,
+    tecnicas_aplicadas || null,
+    proxima_sesion || null,
+    atencion_id
+  ], function(err) {
+    if (err) {
+      console.error('Error actualizando HC psicológica:', err);
+      return res.status(500).json({ error: 'Error actualizando historia clínica psicológica' });
+    }
+    if (this.changes === 0) {
+      return res.status(404).json({ error: 'Historia clínica psicológica no encontrada' });
+    }
+    res.json({ 
+      success: true, 
+      message: 'Historia clínica psicológica actualizada exitosamente' 
+    });
+  });
+});
+
 // Marcar atención como completada
 app.put('/api/atenciones/:id/completar', (req, res) => {
   const { id } = req.params;
@@ -2467,7 +2700,22 @@ app.get('/api/pacientes/consultar-adres/:numero_documento', async (req, res) => 
     
     if (!numero_documento) {
       return res.status(400).json({ 
-        error: 'Número de documento es requerido' 
+        success: false,
+        error: 'Número de documento es requerido',
+        message: 'Debe proporcionar un número de documento para consultar'
+      });
+    }
+    
+    // Verificar si hay API key configurada
+    const apiKey = process.env.APITUDE_API_KEY;
+    if (!apiKey) {
+      console.log(`📥 [ADRES] Consulta sin API key configurada para documento: ${numero_documento}`);
+      return res.status(503).json({
+        success: false,
+        error: 'API no configurada',
+        message: 'La integración con ADRES no está configurada. Para activarla, agregue APITUDE_API_KEY en el archivo .env. Mientras tanto, puede ingresar los datos manualmente.',
+        datos: null,
+        requiere_configuracion: true
       });
     }
     

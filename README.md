@@ -83,8 +83,14 @@ Frontend: React 18 + TypeScript + Vite + Tailwind CSS
 #### Variables de entorno
 Crea un archivo `.env` en `backend/` con:
 
-```
+```env
+# API Key de ElevenLabs para Speech-to-Text y Text-to-Speech
 ELEVENLABS_API_KEY=tu_api_key_de_elevenlabs
+
+# API Key de Apitude para consultar ADRES/BDUA (opcional)
+# Obtén tu API key en: https://apitude.co
+# Cuando tengas acceso, agrega:
+# APITUDE_API_KEY=tu_api_key_aqui
 ```
 
 Endpoint TTS: `POST http://localhost:3001/api/tts` con body `{ "texto": "Hola" }` devuelve `audio/mpeg`.
@@ -93,6 +99,16 @@ Endpoint TTS: `POST http://localhost:3001/api/tts` con body `{ "texto": "Hola" }
 - Endpoint: `POST http://localhost:3001/api/stt`
 - Enviar `multipart/form-data` con el campo `audio` (ej. `audio/webm` del navegador)
 - Respuesta: JSON con `{ text: "..." }`
+
+### Consulta ADRES (Base de Datos Única de Afiliados)
+- **Integración con Apitude**: El sistema está preparado para consultar datos de pacientes desde ADRES
+- **Endpoint**: `GET http://localhost:3001/api/pacientes/consultar-adres/:numero_documento?tipo_documento=CC`
+- **Estado**: ✅ Implementado y listo para usar cuando tengas credenciales
+- **Configuración**: 
+  1. Obtén una API key de Apitude (https://apitude.co)
+  2. Agrega `APITUDE_API_KEY=tu_api_key` en `backend/.env`
+  3. Reinicia el servidor backend
+- **Nota**: Si no hay API key configurada, el sistema mostrará un mensaje informativo y permitirá ingresar los datos manualmente
 >>>>>>> 104f43e (feat(IA): TTS y STT con ElevenLabs + UI médico)
 
 Backend: Node.js + Express + SQLite
