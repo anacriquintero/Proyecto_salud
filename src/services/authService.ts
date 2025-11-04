@@ -1,5 +1,7 @@
 // src/services/authService.ts
 import { User, LoginCredentials } from '../types/auth';
+import { PerfilAutocompletado, CrearPerfilPayload, ActualizarPerfilPayload } from '../types/perfiles';
+import { ConsultaADRESResponse } from '../types/adres';
 
 const API_URL = 'http://localhost:3001/api';
 
@@ -579,6 +581,132 @@ export class AuthService {
     } catch (error) {
       console.error('Error en getDemandasAsignadas:', error);
       throw error;
+    }
+  }
+
+  // ==================== MÉTODOS PERFILES AUTOCOMPLETADO ====================
+
+  static async getPerfiles(tipoPerfil?: string, usuarioId?: number): Promise<PerfilAutocompletado[]> {
+    try {
+      const params = new URLSearchParams();
+      if (tipoPerfil) params.append('tipo_perfil', tipoPerfil);
+      if (usuarioId) params.append('usuario_id', usuarioId.toString());
+      
+      const url = `${API_URL}/perfiles-autocompletado${params.toString() ? `?${params.toString()}` : ''}`;
+      console.log('🔍 [getPerfiles] URL:', url);
+      const response = await fetch(url);
+      console.log('🔍 [getPerfiles] Response status:', response.status);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('🔍 [getPerfiles] Error response:', errorText);
+        throw new Error(`Error obteniendo perfiles: ${response.status} - ${errorText}`);
+      }
+      const data = await response.json();
+      console.log('🔍 [getPerfiles] Data recibida:', data);
+      return data;
+    } catch (error) {
+      console.error('Error en getPerfiles:', error);
+      throw error;
+    }
+  }
+
+  static async getPerfil(id: number): Promise<PerfilAutocompletado> {
+    try {
+      const response = await fetch(`${API_URL}/perfiles-autocompletado/${id}`);
+      if (!response.ok) throw new Error('Error obteniendo perfil');
+      return response.json();
+    } catch (error) {
+      console.error('Error en getPerfil:', error);
+      throw error;
+    }
+  }
+
+  static async crearPerfil(payload: CrearPerfilPayload): Promise<PerfilAutocompletado> {
+    try {
+      const user = this.getCurrentUser();
+      const response = await fetch(`${API_URL}/perfiles-autocompletado`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...payload,
+          creado_por_uid: user?.id
+        })
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Error creando perfil');
+      }
+      return response.json();
+    } catch (error) {
+      console.error('Error en crearPerfil:', error);
+      throw error;
+    }
+  }
+
+  static async actualizarPerfil(id: number, payload: ActualizarPerfilPayload): Promise<PerfilAutocompletado> {
+    try {
+      const response = await fetch(`${API_URL}/perfiles-autocompletado/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Error actualizando perfil');
+      }
+      return response.json();
+    } catch (error) {
+      console.error('Error en actualizarPerfil:', error);
+      throw error;
+    }
+  }
+
+  static async eliminarPerfil(id: number): Promise<void> {
+    try {
+      const response = await fetch(`${API_URL}/perfiles-autocompletado/${id}`, {
+        method: 'DELETE'
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Error eliminando perfil');
+      }
+    } catch (error) {
+      console.error('Error en eliminarPerfil:', error);
+      throw error;
+    }
+  }
+
+  // ==================== MÉTODOS CONSULTA ADRES ====================
+
+  static async consultarADRES(numeroDocumento: string, tipoDocumento: string = 'CC'): Promise<ConsultaADRESResponse> {
+    try {
+      const url = `${API_URL}/pacientes/consultar-adres/${numeroDocumento}?tipo_documento=${tipoDocumento}`;
+      console.log('🔍 [consultarADRES] URL:', url);
+      
+      const response = await fetch(url);
+      const data = await response.json();
+      
+      if (!response.ok) {
+        // Si es 404, significa que no se encontró información (no es un error crítico)
+        if (response.status === 404) {
+          return {
+            success: false,
+            message: data.message || 'No se encontró información del paciente',
+            datos: null
+          };
+        }
+        throw new Error(data.error || data.message || 'Error consultando ADRES');
+      }
+      
+      return data;
+    } catch (error: any) {
+      console.error('Error en consultarADRES:', error);
+      return {
+        success: false,
+        error: error.message || 'Error desconocido',
+        message: 'No se pudo consultar ADRES. Puede ingresar los datos manualmente.',
+        datos: null
+      };
     }
   }
 }

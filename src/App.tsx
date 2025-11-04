@@ -3,6 +3,8 @@ import { useAuth } from "./hooks/useAuth";
 import { LoginForm } from "./components/LoginForm";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { UserProfile } from "./components/UserProfile";
+import { STTButton } from "./components/STTButton";
+import { ConsultarADRESButton } from "./components/ConsultarADRESButton";
 import { 
   User, 
   Users, 
@@ -286,16 +288,18 @@ const ResponsiveInput = (props: any) => (
   />
 );
 
-const ResponsiveSelect = ({ options = [], ...rest }: any) => (
+const ResponsiveSelect = ({ options = [], className = "", ...rest }: any) => (
   <select
     {...rest}
-    className="w-full px-3 py-2 md:py-3 border border-sinbad-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm md:text-base bg-white transition-colors"
+    className={`w-full px-3 py-2 md:py-3 border border-sinbad-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm md:text-base bg-white transition-colors ${className}`}
   >
-    {options.map((o: any) => (
-      <option key={o.value} value={o.value}>
-        {o.label}
-      </option>
-    ))}
+    {options && options.length > 0 ? (
+      options.map((o: any) => (
+        <option key={o.value || o} value={o.value || o}>
+          {o.label || o}
+        </option>
+      ))
+    ) : null}
   </select>
 );
 
@@ -986,7 +990,36 @@ function DetalleFamiliaView({ familia, onBack, onShowCaracterizacion, onShowPaci
                 options={[{value:'CC',label:'CC'},{value:'TI',label:'TI'},{value:'CE',label:'CE'}]} />
             </ResponsiveField>
             <ResponsiveField label="Número documento">
-              <ResponsiveInput value={form.numero_documento} onChange={(e: any) => setForm({ ...form, numero_documento: e.target.value })} />
+              <div className="flex gap-2">
+                <ResponsiveInput 
+                  value={form.numero_documento} 
+                  onChange={(e: any) => setForm({ ...form, numero_documento: e.target.value })} 
+                  className="flex-1"
+                />
+                <ConsultarADRESButton
+                  numeroDocumento={form.numero_documento}
+                  tipoDocumento={form.tipo_documento}
+                  onDatosEncontrados={(datos) => {
+                    if (datos) {
+                      // Separar nombres si vienen juntos
+                      const nombresCompletos = datos.nombres || datos.primer_nombre || '';
+                      const apellidosCompletos = datos.apellidos || datos.primer_apellido || '';
+                      
+                      const nombresArray = nombresCompletos.split(' ');
+                      const apellidosArray = apellidosCompletos.split(' ');
+                      
+                      setForm({
+                        ...form,
+                        primer_nombre: nombresArray[0] || datos.primer_nombre || '',
+                        segundo_nombre: nombresArray[1] || datos.segundo_nombre || '',
+                        primer_apellido: apellidosArray[0] || datos.primer_apellido || '',
+                        segundo_apellido: apellidosArray[1] || datos.segundo_apellido || '',
+                        fecha_nacimiento: datos.fecha_nacimiento || form.fecha_nacimiento
+                      });
+                    }
+                  }}
+                />
+              </div>
             </ResponsiveField>
             <ResponsiveField label="Primer nombre">
               <ResponsiveInput value={form.primer_nombre} onChange={(e: any) => setForm({ ...form, primer_nombre: e.target.value })} />
@@ -1565,21 +1598,245 @@ function ConsultaFormView({ patient, deviceType }: any) {
   const [atencionId, setAtencionId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [guardando, setGuardando] = useState(false);
+  
+  // Perfiles de autocompletado
+  const [perfiles, setPerfiles] = useState<any[]>([]);
+  const [perfilSeleccionado, setPerfilSeleccionado] = useState<number | null>(null);
+  const [cargandoPerfiles, setCargandoPerfiles] = useState(false);
+  const [mostrarCrearPerfil, setMostrarCrearPerfil] = useState(false);
+  const [nombreNuevoPerfil, setNombreNuevoPerfil] = useState('');
+  const [descripcionNuevoPerfil, setDescripcionNuevoPerfil] = useState('');
+  const [guardandoPerfil, setGuardandoPerfil] = useState(false);
+  
+  // Datos generales
+  const [horaConsulta, setHoraConsulta] = useState('');
+  const [estadoCivil, setEstadoCivil] = useState('');
+  
+  // Motivo y enfermedad
   const [motivo, setMotivo] = useState('');
   const [enfermedadActual, setEnfermedadActual] = useState('');
-  const [examenFisico, setExamenFisico] = useState('');
-  const [diagnostico, setDiagnostico] = useState('');
-  const [planManejo, setPlanManejo] = useState('');
+  
+  // Enfoque diferencial
+  const [enfoqueDiferencial, setEnfoqueDiferencial] = useState<any>({
+    etnia: { afrodescendiente: false, indigena: false, palanquero: false, mestizo: false, otro: false, otro_cual: '' },
+    discapacidades: { visual: false, auditiva: false, mental: false, fisica: false, multiple: false, sordo_ceguera: false, otra: false, otra_cual: '' },
+    poblacion_lgtbiq: { si: false, no: false, cual: '' },
+    poblacion_migrante: '',
+    privados_libertad: { si: false, no: false },
+    victimas_conflicto: { si: false, no: false },
+    veteranos_fuerza_publica: { si: false, no: false },
+    adulto_mayor: { si: false, no: false },
+    embarazadas: { si: false, no: false },
+    victima_sexual: { si: false, no: false }
+  });
+  
+  // Antecedentes
   const [antecedentesPersonales, setAntecedentesPersonales] = useState<any>({
     patologicos: '', inmunologicos: '', ginecologicos: '', farmacologicos: '',
     quirurgicos: '', hospitalizaciones: '', alergicos: '', toxicologicos: '', traumatologicos: ''
   });
   const [antecedentesFamiliares, setAntecedentesFamiliares] = useState('');
+  
+  // Revisión por sistemas
   const sistemas = [
     'Cardiovascular','Digestivo','Renal','Nervioso','Organos de los sentidos','Mental','Musculoesqueletico'
   ];
   const [revisionPorSistemasSeleccion, setRevisionPorSistemasSeleccion] = useState<string[]>([]);
   const [revisionPorSistemasHallazgos, setRevisionPorSistemasHallazgos] = useState<Record<string,string>>({});
+  
+  // Signos vitales
+  const [tensionSistolica, setTensionSistolica] = useState('');
+  const [tensionDiastolica, setTensionDiastolica] = useState('');
+  const [frecuenciaCardiaca, setFrecuenciaCardiaca] = useState('');
+  const [frecuenciaRespiratoria, setFrecuenciaRespiratoria] = useState('');
+  const [saturacionOxigeno, setSaturacionOxigeno] = useState('');
+  const [temperatura, setTemperatura] = useState('');
+  
+  // Medidas antropométricas
+  const [peso, setPeso] = useState('');
+  const [talla, setTalla] = useState('');
+  const [imc, setImc] = useState('');
+  const [perimetroCefalico, setPerimetroCefalico] = useState('');
+  const [perimetroToracico, setPerimetroToracico] = useState('');
+  const [perimetroAbdominal, setPerimetroAbdominal] = useState('');
+  const [perimetroBraquial, setPerimetroBraquial] = useState('');
+  const [perimetroPantorrilla, setPerimetroPantorrilla] = useState('');
+  
+  // Otros parámetros
+  const [glucometria, setGlucometria] = useState('');
+  const [glasgow, setGlasgow] = useState('');
+  
+  // Examen y diagnósticos
+  const [examenFisico, setExamenFisico] = useState('');
+  const [diagnosticoPrincipal, setDiagnosticoPrincipal] = useState('');
+  const [diagnosticosRelacionados, setDiagnosticosRelacionados] = useState(['', '', '']);
+  
+  // Plan y evolución
+  const [conductaSeguir, setConductaSeguir] = useState('');
+  const [evolucion, setEvolucion] = useState('');
+  const [analisis, setAnalisis] = useState('');
+  const [planManejo, setPlanManejo] = useState('');
+  
+  // Egreso
+  const [fechaHoraEgreso, setFechaHoraEgreso] = useState('');
+  
+  // Cargar perfiles disponibles (públicos + del usuario)
+  useEffect(() => {
+    const cargarPerfiles = async () => {
+      try {
+        setCargandoPerfiles(true);
+        const user = AuthService.getCurrentUser();
+        console.log('🔍 [ConsultaFormView] Usuario actual:', user);
+        console.log('🔍 [ConsultaFormView] Llamando getPerfiles con:', { tipoPerfil: 'HC_Medicina', usuarioId: user?.id });
+        const perfilesData = await AuthService.getPerfiles('HC_Medicina', user?.id ? Number(user.id) : undefined);
+        console.log('✅ [ConsultaFormView] Perfiles cargados:', perfilesData);
+        console.log('✅ [ConsultaFormView] Cantidad de perfiles:', perfilesData?.length || 0);
+        setPerfiles(perfilesData || []);
+      } catch (error: any) {
+        console.error('❌ [ConsultaFormView] Error cargando perfiles:', error);
+        console.error('❌ [ConsultaFormView] Error details:', error.message, error.stack);
+        setPerfiles([]);
+        // Mostrar mensaje de error al usuario
+        alert(`Error cargando perfiles: ${error.message || 'Error desconocido'}`);
+      } finally {
+        setCargandoPerfiles(false);
+      }
+    };
+    cargarPerfiles();
+  }, []);
+
+  // Aplicar perfil seleccionado
+  const aplicarPerfil = () => {
+    if (!perfilSeleccionado) {
+      alert('Por favor selecciona un perfil');
+      return;
+    }
+
+    const perfil = perfiles.find(p => p.perfil_id === perfilSeleccionado);
+    if (!perfil || !perfil.datos_perfil) {
+      alert('Error: Perfil no encontrado');
+      return;
+    }
+
+    const datos = perfil.datos_perfil;
+
+    // Aplicar datos del perfil a los campos correspondientes
+    if (datos.motivo_consulta) setMotivo(datos.motivo_consulta);
+    if (datos.enfermedad_actual) setEnfermedadActual(datos.enfermedad_actual);
+    if (datos.antecedentes_familiares) setAntecedentesFamiliares(datos.antecedentes_familiares);
+    if (datos.examen_fisico) setExamenFisico(datos.examen_fisico);
+    if (datos.plan_manejo) setPlanManejo(datos.plan_manejo);
+    if (datos.conducta_seguir) setConductaSeguir(datos.conducta_seguir);
+    if (datos.evolucion) setEvolucion(datos.evolucion);
+    if (datos.analisis) setAnalisis(datos.analisis);
+    if (datos.diagnostico_principal) setDiagnosticoPrincipal(datos.diagnostico_principal);
+
+    // Aplicar enfoque diferencial si existe
+    if (datos.enfoque_diferencial) {
+      const nuevoEnfoque = { ...enfoqueDiferencial };
+      const enfoque = datos.enfoque_diferencial;
+      
+      if (enfoque.ciclo_vida) {
+        if (enfoque.ciclo_vida === 'Adolescente') {
+          nuevoEnfoque.adulto_mayor = { si: false, no: true };
+        } else if (enfoque.ciclo_vida === 'Adulto Mayor') {
+          nuevoEnfoque.adulto_mayor = { si: true, no: false };
+        }
+      }
+      
+      if (enfoque.discapacidad !== undefined) {
+        nuevoEnfoque.discapacidades = {
+          visual: false, auditiva: false, mental: false, fisica: false,
+          multiple: false, sordo_ceguera: false, otra: false, otra_cual: ''
+        };
+        if (enfoque.discapacidad) {
+          nuevoEnfoque.discapacidades.otra = true;
+        }
+      }
+      
+      if (enfoque.victima_violencia !== undefined) {
+        nuevoEnfoque.victimas_conflicto = {
+          si: enfoque.victima_violencia,
+          no: !enfoque.victima_violencia
+        };
+      }
+      
+      setEnfoqueDiferencial(nuevoEnfoque);
+    }
+
+    alert(`Perfil "${perfil.nombre_perfil}" aplicado exitosamente`);
+  };
+
+  // Guardar perfil personalizado desde los valores actuales del formulario
+  const guardarPerfilPersonalizado = async () => {
+    if (!nombreNuevoPerfil.trim()) {
+      alert('Por favor ingresa un nombre para el perfil');
+      return;
+    }
+
+    try {
+      setGuardandoPerfil(true);
+      
+      // Crear objeto con los datos actuales del formulario
+      const datosPerfil = {
+        motivo_consulta: motivo || undefined,
+        enfermedad_actual: enfermedadActual || undefined,
+        antecedentes_familiares: antecedentesFamiliares || undefined,
+        examen_fisico: examenFisico || undefined,
+        plan_manejo: planManejo || undefined,
+        conducta_seguir: conductaSeguir || undefined,
+        evolucion: evolucion || undefined,
+        analisis: analisis || undefined,
+        diagnostico_principal: diagnosticoPrincipal || undefined,
+        enfoque_diferencial: enfoqueDiferencial || undefined
+      };
+
+      // Eliminar campos undefined
+      Object.keys(datosPerfil).forEach(key => {
+        if (datosPerfil[key as keyof typeof datosPerfil] === undefined) {
+          delete datosPerfil[key as keyof typeof datosPerfil];
+        }
+      });
+
+      await AuthService.crearPerfil({
+        nombre_perfil: nombreNuevoPerfil.trim(),
+        descripcion: descripcionNuevoPerfil.trim() || undefined,
+        tipo_perfil: 'HC_Medicina',
+        datos_perfil: datosPerfil
+      });
+
+      // Recargar perfiles
+      const user = AuthService.getCurrentUser();
+      const perfilesData = await AuthService.getPerfiles('HC_Medicina', user?.id ? Number(user.id) : undefined);
+      setPerfiles(perfilesData || []);
+
+      // Limpiar formulario
+      setNombreNuevoPerfil('');
+      setDescripcionNuevoPerfil('');
+      setMostrarCrearPerfil(false);
+
+      alert(`Perfil "${nombreNuevoPerfil}" guardado exitosamente`);
+    } catch (error: any) {
+      console.error('Error guardando perfil:', error);
+      alert(`Error guardando perfil: ${error.message || 'Error desconocido'}`);
+    } finally {
+      setGuardandoPerfil(false);
+    }
+  };
+
+  // Calcular IMC automáticamente
+  useEffect(() => {
+    if (peso && talla) {
+      const pesoNum = parseFloat(peso);
+      const tallaNum = parseFloat(talla);
+      if (pesoNum > 0 && tallaNum > 0) {
+        const imcCalculado = (pesoNum / (tallaNum * tallaNum)).toFixed(2);
+        setImc(imcCalculado);
+      }
+    } else {
+      setImc('');
+    }
+  }, [peso, talla]);
 
   // Cargar HC existente o crear nueva
   useEffect(() => {
@@ -1605,26 +1862,37 @@ function ConsultaFormView({ patient, deviceType }: any) {
           const hcCompleta = await AuthService.getHCMedicina(ultimaHC.atencion_id);
           
           if (hcCompleta) {
+            // Datos generales
+            setHoraConsulta(hcCompleta.hora_consulta || '');
             setMotivo(hcCompleta.motivo_consulta || '');
             setEnfermedadActual(hcCompleta.enfermedad_actual || '');
-            setExamenFisico(hcCompleta.examen_fisico || '');
-            setDiagnostico(hcCompleta.diagnosticos_cie10 || '');
-            setPlanManejo(hcCompleta.plan_manejo || '');
-            setAntecedentesFamiliares(hcCompleta.antecedentes_familiares || '');
             
-            // Procesar antecedentes personales
+            // Enfoque diferencial
+            if (hcCompleta.enfoque_diferencial) {
+              try {
+                const enfoque = typeof hcCompleta.enfoque_diferencial === 'string'
+                  ? JSON.parse(hcCompleta.enfoque_diferencial)
+                  : hcCompleta.enfoque_diferencial;
+                setEnfoqueDiferencial(enfoque || enfoqueDiferencial);
+              } catch (e) {
+                console.error('Error parseando enfoque diferencial:', e);
+              }
+            }
+            
+            // Antecedentes
             if (hcCompleta.antecedentes_personales) {
               try {
                 const antPer = typeof hcCompleta.antecedentes_personales === 'string' 
                   ? JSON.parse(hcCompleta.antecedentes_personales) 
                   : hcCompleta.antecedentes_personales;
-                setAntecedentesPersonales(antPer);
+                setAntecedentesPersonales(antPer || antecedentesPersonales);
               } catch (e) {
                 console.error('Error parseando antecedentes personales:', e);
               }
             }
+            setAntecedentesFamiliares(hcCompleta.antecedentes_familiares || '');
             
-            // Procesar revisión por sistemas
+            // Revisión por sistemas
             if (hcCompleta.revision_por_sistemas) {
               try {
                 const revSistemas = typeof hcCompleta.revision_por_sistemas === 'string'
@@ -1641,6 +1909,64 @@ function ConsultaFormView({ patient, deviceType }: any) {
                 console.error('Error parseando revisión por sistemas:', e);
               }
             }
+            
+            // Signos vitales
+            setTensionSistolica(hcCompleta.tension_arterial_sistolica?.toString() || '');
+            setTensionDiastolica(hcCompleta.tension_arterial_diastolica?.toString() || '');
+            setFrecuenciaCardiaca(hcCompleta.frecuencia_cardiaca?.toString() || '');
+            setFrecuenciaRespiratoria(hcCompleta.frecuencia_respiratoria?.toString() || '');
+            setSaturacionOxigeno(hcCompleta.saturacion_oxigeno?.toString() || '');
+            setTemperatura(hcCompleta.temperatura?.toString() || '');
+            
+            // Medidas antropométricas
+            setPeso(hcCompleta.peso?.toString() || '');
+            setTalla(hcCompleta.talla?.toString() || '');
+            setImc(hcCompleta.imc?.toString() || '');
+            setPerimetroCefalico(hcCompleta.perimetro_cefalico?.toString() || '');
+            setPerimetroToracico(hcCompleta.perimetro_toracico?.toString() || '');
+            setPerimetroAbdominal(hcCompleta.perimetro_abdominal?.toString() || '');
+            setPerimetroBraquial(hcCompleta.perimetro_braquial?.toString() || '');
+            setPerimetroPantorrilla(hcCompleta.perimetro_pantorrilla?.toString() || '');
+            
+            // Otros parámetros
+            setGlucometria(hcCompleta.glucometria?.toString() || '');
+            setGlasgow(hcCompleta.glasgow || '');
+            
+            // Examen y diagnósticos
+            setExamenFisico(hcCompleta.examen_fisico || '');
+            // diagnosticos_cie10 puede ser un string o un objeto con principal y relacionados
+            if (hcCompleta.diagnosticos_cie10) {
+              try {
+                const diag = typeof hcCompleta.diagnosticos_cie10 === 'string'
+                  ? JSON.parse(hcCompleta.diagnosticos_cie10)
+                  : hcCompleta.diagnosticos_cie10;
+                if (typeof diag === 'object' && diag.principal) {
+                  setDiagnosticoPrincipal(diag.principal || '');
+                  setDiagnosticosRelacionados(diag.relacionados || ['', '', '']);
+                } else {
+                  setDiagnosticoPrincipal(hcCompleta.diagnosticos_cie10);
+                }
+              } catch (e) {
+                setDiagnosticoPrincipal(hcCompleta.diagnosticos_cie10);
+              }
+            }
+            
+            // Plan y evolución
+            setConductaSeguir(hcCompleta.conducta_seguir || '');
+            setEvolucion(hcCompleta.evolucion || '');
+            setAnalisis(hcCompleta.analisis || '');
+            setPlanManejo(hcCompleta.plan_manejo || '');
+            
+            // Egreso
+            if (hcCompleta.fecha_hora_egreso) {
+              const fechaEgreso = new Date(hcCompleta.fecha_hora_egreso);
+              setFechaHoraEgreso(fechaEgreso.toISOString().slice(0, 16));
+            }
+          }
+          
+          // Cargar estado civil del paciente
+          if (patient?.estado_civil) {
+            setEstadoCivil(patient.estado_civil);
           }
         } else {
           // No hay HC, se creará una nueva al guardar
@@ -1677,8 +2003,8 @@ function ConsultaFormView({ patient, deviceType }: any) {
   };
 
   const handleGuardar = async () => {
-    if (!motivo.trim() || !diagnostico.trim()) {
-      alert('Por favor completa los campos obligatorios: Motivo de consulta y Diagnóstico');
+    if (!motivo.trim() || !diagnosticoPrincipal.trim()) {
+      alert('Por favor completa los campos obligatorios: Motivo de consulta y Diagnóstico principal');
       return;
     }
 
@@ -1686,18 +2012,52 @@ function ConsultaFormView({ patient, deviceType }: any) {
       setGuardando(true);
       const user = AuthService.getCurrentUser();
       
-      const payload = {
+      // Construir objeto de diagnósticos
+      const diagnosticosObj = {
+        principal: diagnosticoPrincipal,
+        relacionados: diagnosticosRelacionados.filter(d => d.trim() !== '')
+      };
+      
+      const payload: any = {
+        hora_consulta: horaConsulta || null,
         motivo_consulta: motivo,
         enfermedad_actual: enfermedadActual,
-        antecedentes_personales: JSON.stringify(antecedentesPersonales),
+        enfoque_diferencial: enfoqueDiferencial,
+        antecedentes_personales: antecedentesPersonales,
         antecedentes_familiares: antecedentesFamiliares,
-        revision_por_sistemas: JSON.stringify({ sistemas: revisionPorSistemasSeleccion, hallazgos: revisionPorSistemasHallazgos }),
+        revision_por_sistemas: { sistemas: revisionPorSistemasSeleccion, hallazgos: revisionPorSistemasHallazgos },
         signos_vitales: null,
         examen_fisico: examenFisico,
-        diagnosticos_cie10: diagnostico,
+        diagnosticos_cie10: diagnosticosRelacionados.filter(d => d.trim() !== '').length > 0 
+          ? JSON.stringify(diagnosticosObj)
+          : diagnosticoPrincipal,
         plan_manejo: planManejo,
         recomendaciones: null,
-        proxima_cita: null
+        proxima_cita: null,
+        // Signos vitales
+        tension_arterial_sistolica: tensionSistolica ? parseInt(tensionSistolica) : null,
+        tension_arterial_diastolica: tensionDiastolica ? parseInt(tensionDiastolica) : null,
+        frecuencia_cardiaca: frecuenciaCardiaca ? parseInt(frecuenciaCardiaca) : null,
+        frecuencia_respiratoria: frecuenciaRespiratoria ? parseInt(frecuenciaRespiratoria) : null,
+        saturacion_oxigeno: saturacionOxigeno ? parseFloat(saturacionOxigeno) : null,
+        temperatura: temperatura ? parseFloat(temperatura) : null,
+        // Medidas antropométricas
+        peso: peso ? parseFloat(peso) : null,
+        talla: talla ? parseFloat(talla) : null,
+        imc: imc ? parseFloat(imc) : null,
+        perimetro_cefalico: perimetroCefalico ? parseFloat(perimetroCefalico) : null,
+        perimetro_toracico: perimetroToracico ? parseFloat(perimetroToracico) : null,
+        perimetro_abdominal: perimetroAbdominal ? parseFloat(perimetroAbdominal) : null,
+        perimetro_braquial: perimetroBraquial ? parseFloat(perimetroBraquial) : null,
+        perimetro_pantorrilla: perimetroPantorrilla ? parseFloat(perimetroPantorrilla) : null,
+        // Otros parámetros
+        glucometria: glucometria ? parseFloat(glucometria) : null,
+        glasgow: glasgow || null,
+        // Campos adicionales
+        conducta_seguir: conductaSeguir || null,
+        evolucion: evolucion || null,
+        analisis: analisis || null,
+        fecha_hora_egreso: fechaHoraEgreso || null
       };
 
       if (atencionId) {
@@ -1747,12 +2107,262 @@ function ConsultaFormView({ patient, deviceType }: any) {
           <ResponsiveBadge tone="admin">Atención #{atencionId}</ResponsiveBadge>
         )}
       </div>
+
+      {/* Selector de perfiles de autocompletado */}
+      <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-xl">
+        <div className="flex flex-col md:flex-row gap-2 items-start md:items-center">
+          <label className="text-sm font-medium text-stone-700 whitespace-nowrap">
+            Perfil de autocompletado:
+          </label>
+          <select
+            className="flex-1 px-3 py-2 border border-stone-300 rounded-lg focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm bg-white"
+            value={perfilSeleccionado || ''}
+            onChange={(e) => setPerfilSeleccionado(e.target.value ? parseInt(e.target.value) : null)}
+            disabled={cargandoPerfiles || perfiles.length === 0}
+          >
+            <option value="">
+              {cargandoPerfiles 
+                ? 'Cargando perfiles...' 
+                : perfiles.length === 0 
+                  ? 'No hay perfiles disponibles' 
+                  : 'Seleccionar perfil...'}
+            </option>
+            {perfiles.map((perfil: any) => (
+              <option key={perfil.perfil_id} value={perfil.perfil_id}>
+                {perfil.nombre_perfil} {perfil.descripcion ? `- ${perfil.descripcion}` : ''}
+                {perfil.creado_por_uid ? ' (Mi perfil)' : ''}
+              </option>
+            ))}
+          </select>
+          <ResponsiveButton
+            variant="secondary"
+            onClick={aplicarPerfil}
+            disabled={!perfilSeleccionado || cargandoPerfiles || perfiles.length === 0}
+            className="whitespace-nowrap"
+          >
+            {cargandoPerfiles ? 'Cargando...' : 'Aplicar Perfil'}
+          </ResponsiveButton>
+          <ResponsiveButton
+            variant="outline"
+            onClick={() => setMostrarCrearPerfil(true)}
+            className="whitespace-nowrap"
+          >
+            Guardar como Perfil
+          </ResponsiveButton>
+        </div>
+        {perfiles.length === 0 && !cargandoPerfiles && (
+          <p className="text-xs text-stone-500 mt-2">
+            No hay perfiles disponibles. Puedes crear uno personalizado con el botón "Guardar como Perfil".
+          </p>
+        )}
+      </div>
+
+      {/* Modal para crear perfil personalizado */}
+      {mostrarCrearPerfil && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 max-w-md w-full">
+            <h3 className="text-lg font-semibold text-stone-900 mb-4">Crear Perfil Personalizado</h3>
+            <div className="space-y-4">
+              <ResponsiveField label="Nombre del perfil" required>
+                <ResponsiveInput
+                  value={nombreNuevoPerfil}
+                  onChange={(e: any) => setNombreNuevoPerfil(e.target.value)}
+                  placeholder="Ej: Mi perfil de control"
+                />
+              </ResponsiveField>
+              <ResponsiveField label="Descripción (opcional)">
+                <ResponsiveInput
+                  value={descripcionNuevoPerfil}
+                  onChange={(e: any) => setDescripcionNuevoPerfil(e.target.value)}
+                  placeholder="Descripción del perfil..."
+                />
+              </ResponsiveField>
+              <p className="text-xs text-stone-500">
+                Se guardará con los valores actuales del formulario. Este perfil solo será visible para ti.
+              </p>
+              <div className="flex gap-3 pt-2">
+                <ResponsiveButton
+                  variant="secondary"
+                  onClick={() => {
+                    setMostrarCrearPerfil(false);
+                    setNombreNuevoPerfil('');
+                    setDescripcionNuevoPerfil('');
+                  }}
+                  disabled={guardandoPerfil}
+                >
+                  Cancelar
+                </ResponsiveButton>
+                <ResponsiveButton
+                  onClick={guardarPerfilPersonalizado}
+                  disabled={guardandoPerfil || !nombreNuevoPerfil.trim()}
+                >
+                  {guardandoPerfil ? 'Guardando...' : 'Guardar Perfil'}
+                </ResponsiveButton>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="space-y-4">
+        {/* Datos generales */}
+        <div className={`grid gap-3 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-2'}`}>
+          <ResponsiveField label="Hora de consulta">
+            <ResponsiveInput type="time" value={horaConsulta} onChange={(e: any) => setHoraConsulta(e.target.value)} />
+          </ResponsiveField>
+          <ResponsiveField label="Estado civil">
+            <ResponsiveInput value={estadoCivil} onChange={(e: any) => setEstadoCivil(e.target.value)} placeholder="Ej: Soltero, Casado..." />
+          </ResponsiveField>
+        </div>
+
+        {/* Motivo de consulta */}
         <ResponsiveField label="Motivo de consulta" required>
-          <ResponsiveInput value={motivo} onChange={(e: any) => setMotivo(e.target.value)} placeholder="Describe el motivo principal..." />
+          <div className="flex gap-2">
+            <ResponsiveInput 
+              value={motivo} 
+              onChange={(e: any) => setMotivo(e.target.value)} 
+              placeholder="Describe el motivo principal..." 
+              className="flex-1"
+            />
+            <STTButton 
+              onTranscription={(text) => setMotivo(prev => prev ? `${prev} ${text}` : text)} 
+            />
+          </div>
         </ResponsiveField>
 
-        {/* Nuevos bloques después de Motivo de Consulta */}
+        {/* Enfoque diferencial */}
+        <ResponsiveCard>
+          <h5 className="font-medium text-stone-900 mb-3">Enfoque Diferencial</h5>
+          <div className="space-y-4">
+            {/* Etnia */}
+            <div>
+              <label className="text-sm font-medium text-stone-700 mb-2 block">Etnia</label>
+              <div className="flex flex-wrap gap-3">
+                {['afrodescendiente', 'indigena', 'palanquero', 'mestizo', 'otro'].map((etnia) => (
+                  <label key={etnia} className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={enfoqueDiferencial.etnia[etnia]} onChange={(e) => setEnfoqueDiferencial((prev: any) => ({ ...prev, etnia: { ...prev.etnia, [etnia]: e.target.checked } }))} />
+                    <span className="capitalize">{etnia}</span>
+                  </label>
+                ))}
+              </div>
+              {enfoqueDiferencial.etnia.otro && (
+                <ResponsiveInput className="mt-2" placeholder="¿Cuál?" value={enfoqueDiferencial.etnia.otro_cual} onChange={(e: any) => setEnfoqueDiferencial((prev: any) => ({ ...prev, etnia: { ...prev.etnia, otro_cual: e.target.value } }))} />
+              )}
+            </div>
+            
+            {/* Discapacidades */}
+            <div>
+              <label className="text-sm font-medium text-stone-700 mb-2 block">Discapacidades</label>
+              <div className="flex flex-wrap gap-3">
+                {['visual', 'auditiva', 'mental', 'fisica', 'multiple', 'sordo_ceguera', 'otra'].map((disc) => (
+                  <label key={disc} className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={enfoqueDiferencial.discapacidades[disc]} onChange={(e) => setEnfoqueDiferencial((prev: any) => ({ ...prev, discapacidades: { ...prev.discapacidades, [disc]: e.target.checked } }))} />
+                    <span className="capitalize">{disc.replace('_', ' ')}</span>
+                  </label>
+                ))}
+              </div>
+              {enfoqueDiferencial.discapacidades.otra && (
+                <ResponsiveInput className="mt-2" placeholder="¿Cuál?" value={enfoqueDiferencial.discapacidades.otra_cual} onChange={(e: any) => setEnfoqueDiferencial((prev: any) => ({ ...prev, discapacidades: { ...prev.discapacidades, otra_cual: e.target.value } }))} />
+              )}
+            </div>
+            
+            {/* Población LGTBIQ+ */}
+            <div>
+              <label className="text-sm font-medium text-stone-700 mb-2 block">Población LGTBIQ+</label>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="radio" name="lgtbiq" checked={enfoqueDiferencial.poblacion_lgtbiq.si} onChange={() => setEnfoqueDiferencial((prev: any) => ({ ...prev, poblacion_lgtbiq: { si: true, no: false, cual: prev.poblacion_lgtbiq.cual } }))} />
+                  <span>Si</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="radio" name="lgtbiq" checked={enfoqueDiferencial.poblacion_lgtbiq.no} onChange={() => setEnfoqueDiferencial((prev: any) => ({ ...prev, poblacion_lgtbiq: { si: false, no: true, cual: prev.poblacion_lgtbiq.cual } }))} />
+                  <span>No</span>
+                </label>
+              </div>
+              {enfoqueDiferencial.poblacion_lgtbiq.si && (
+                <ResponsiveInput className="mt-2" placeholder="¿Cuál?" value={enfoqueDiferencial.poblacion_lgtbiq.cual} onChange={(e: any) => setEnfoqueDiferencial((prev: any) => ({ ...prev, poblacion_lgtbiq: { ...prev.poblacion_lgtbiq, cual: e.target.value } }))} />
+              )}
+            </div>
+            
+            {/* Otras poblaciones */}
+            <div className={`grid gap-3 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-2'}`}>
+              {[
+                { key: 'poblacion_migrante', label: 'Población migrante', tipo: 'text' },
+                { key: 'privados_libertad', label: 'Privados de la libertad', tipo: 'radio' },
+                { key: 'victimas_conflicto', label: 'Víctimas conflicto', tipo: 'radio' },
+                { key: 'veteranos_fuerza_publica', label: 'Veteranos fuerza pública', tipo: 'radio' },
+                { key: 'adulto_mayor', label: 'Adulto mayor', tipo: 'radio' },
+                { key: 'embarazadas', label: 'Embarazadas', tipo: 'radio' },
+                { key: 'victima_sexual', label: 'Víctima sexual', tipo: 'radio' }
+              ].map((item) => (
+                <div key={item.key}>
+                  <label className="text-sm font-medium text-stone-700 mb-2 block">{item.label}</label>
+                  {item.tipo === 'text' ? (
+                    <ResponsiveInput value={enfoqueDiferencial[item.key]} onChange={(e: any) => setEnfoqueDiferencial((prev: any) => ({ ...prev, [item.key]: e.target.value }))} />
+                  ) : (
+                    <div className="flex gap-4">
+                      <label className="flex items-center gap-2 text-sm">
+                        <input type="radio" name={item.key} checked={enfoqueDiferencial[item.key].si} onChange={() => setEnfoqueDiferencial((prev: any) => ({ ...prev, [item.key]: { si: true, no: false } }))} />
+                        <span>Si</span>
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input type="radio" name={item.key} checked={enfoqueDiferencial[item.key].no} onChange={() => setEnfoqueDiferencial((prev: any) => ({ ...prev, [item.key]: { si: false, no: true } }))} />
+                        <span>No</span>
+                      </label>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </ResponsiveCard>
+
+        {/* Enfermedad actual */}
+        <ResponsiveField label="Enfermedad actual">
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <textarea 
+                className="flex-1 px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none" 
+                rows={3} 
+                placeholder="Inicio, duración, características..." 
+                value={enfermedadActual} 
+                onChange={(e) => setEnfermedadActual(e.target.value)} 
+              />
+              <STTButton 
+                onTranscription={(text) => setEnfermedadActual(prev => prev ? `${prev} ${text}` : text)} 
+              />
+            </div>
+          </div>
+        </ResponsiveField>
+
+        {/* Antecedentes personales */}
+        <ResponsiveCard>
+          <h5 className="font-medium text-stone-900 mb-3">Antecedentes personales</h5>
+          <div className={`grid gap-3 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-2'}`}>
+            {Object.keys(antecedentesPersonales).map((k) => (
+              <ResponsiveField key={k} label={k.charAt(0).toUpperCase() + k.slice(1)}>
+                <ResponsiveInput value={antecedentesPersonales[k]} onChange={(e: any) => setAntecedentesPersonales((p: any) => ({ ...p, [k]: e.target.value }))} />
+              </ResponsiveField>
+            ))}
+          </div>
+        </ResponsiveCard>
+
+        {/* Antecedentes familiares */}
+        <ResponsiveField label="Antecedentes familiares">
+          <div className="flex gap-2">
+            <textarea 
+              className="flex-1 px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none" 
+              rows={3} 
+              value={antecedentesFamiliares} 
+              onChange={(e) => setAntecedentesFamiliares(e.target.value)} 
+            />
+            <STTButton 
+              onTranscription={(text) => setAntecedentesFamiliares(prev => prev ? `${prev} ${text}` : text)} 
+            />
+          </div>
+        </ResponsiveField>
+
+        {/* Revisión por sistemas */}
         <ResponsiveCard>
           <div className="flex items-center justify-between mb-3">
             <h5 className="font-medium text-stone-900">Revisión por Sistemas</h5>
@@ -1778,44 +2388,175 @@ function ConsultaFormView({ patient, deviceType }: any) {
           </div>
         </ResponsiveCard>
 
+        {/* Signos vitales */}
         <ResponsiveCard>
-          <h5 className="font-medium text-stone-900 mb-3">Antecedentes personales</h5>
+          <h5 className="font-medium text-stone-900 mb-3">Signos Vitales</h5>
           <div className={`grid gap-3 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-2'}`}>
-            {Object.keys(antecedentesPersonales).map((k) => (
-              <ResponsiveField key={k} label={k.charAt(0).toUpperCase() + k.slice(1)}>
-                <ResponsiveInput value={antecedentesPersonales[k]} onChange={(e: any) => setAntecedentesPersonales((p: any) => ({ ...p, [k]: e.target.value }))} />
+            <div className="grid grid-cols-2 gap-2">
+              <ResponsiveField label="TA Sistólica">
+                <ResponsiveInput type="number" value={tensionSistolica} onChange={(e: any) => setTensionSistolica(e.target.value)} placeholder="120" />
+              </ResponsiveField>
+              <ResponsiveField label="TA Diastólica">
+                <ResponsiveInput type="number" value={tensionDiastolica} onChange={(e: any) => setTensionDiastolica(e.target.value)} placeholder="80" />
+              </ResponsiveField>
+            </div>
+            <ResponsiveField label="FC (lpm)">
+              <ResponsiveInput type="number" value={frecuenciaCardiaca} onChange={(e: any) => setFrecuenciaCardiaca(e.target.value)} placeholder="72" />
+            </ResponsiveField>
+            <ResponsiveField label="FR (rpm)">
+              <ResponsiveInput type="number" value={frecuenciaRespiratoria} onChange={(e: any) => setFrecuenciaRespiratoria(e.target.value)} placeholder="16" />
+            </ResponsiveField>
+            <ResponsiveField label="SO2 (%)">
+              <ResponsiveInput type="number" step="0.1" value={saturacionOxigeno} onChange={(e: any) => setSaturacionOxigeno(e.target.value)} placeholder="98" />
+            </ResponsiveField>
+            <ResponsiveField label="Temperatura (°C)">
+              <ResponsiveInput type="number" step="0.1" value={temperatura} onChange={(e: any) => setTemperatura(e.target.value)} placeholder="36.5" />
+            </ResponsiveField>
+          </div>
+        </ResponsiveCard>
+
+        {/* Medidas antropométricas */}
+        <ResponsiveCard>
+          <h5 className="font-medium text-stone-900 mb-3">Medidas Antropométricas</h5>
+          <div className={`grid gap-3 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-2'}`}>
+            <ResponsiveField label="Peso (kg)">
+              <ResponsiveInput type="number" step="0.1" value={peso} onChange={(e: any) => setPeso(e.target.value)} placeholder="70" />
+            </ResponsiveField>
+            <ResponsiveField label="Talla (m)">
+              <ResponsiveInput type="number" step="0.01" value={talla} onChange={(e: any) => setTalla(e.target.value)} placeholder="1.70" />
+            </ResponsiveField>
+            <ResponsiveField label="IMC">
+              <ResponsiveInput type="number" step="0.01" value={imc} readOnly placeholder="Calculado automáticamente" />
+            </ResponsiveField>
+            <ResponsiveField label="Perímetro cefálico (cm)">
+              <ResponsiveInput type="number" step="0.1" value={perimetroCefalico} onChange={(e: any) => setPerimetroCefalico(e.target.value)} />
+            </ResponsiveField>
+            <ResponsiveField label="Perímetro torácico (cm)">
+              <ResponsiveInput type="number" step="0.1" value={perimetroToracico} onChange={(e: any) => setPerimetroToracico(e.target.value)} />
+            </ResponsiveField>
+            <ResponsiveField label="Perímetro abdominal (cm)">
+              <ResponsiveInput type="number" step="0.1" value={perimetroAbdominal} onChange={(e: any) => setPerimetroAbdominal(e.target.value)} />
+            </ResponsiveField>
+            <ResponsiveField label="Perímetro braquial (cm)">
+              <ResponsiveInput type="number" step="0.1" value={perimetroBraquial} onChange={(e: any) => setPerimetroBraquial(e.target.value)} />
+            </ResponsiveField>
+            <ResponsiveField label="Perímetro pantorrilla (cm)">
+              <ResponsiveInput type="number" step="0.1" value={perimetroPantorrilla} onChange={(e: any) => setPerimetroPantorrilla(e.target.value)} />
+            </ResponsiveField>
+          </div>
+        </ResponsiveCard>
+
+        {/* Otros parámetros */}
+        <ResponsiveCard>
+          <h5 className="font-medium text-stone-900 mb-3">Otros Parámetros</h5>
+          <div className={`grid gap-3 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-2'}`}>
+            <ResponsiveField label="Glucometría (mg/dL)">
+              <ResponsiveInput type="number" step="0.1" value={glucometria} onChange={(e: any) => setGlucometria(e.target.value)} />
+            </ResponsiveField>
+            <ResponsiveField label="Glasgow">
+              <ResponsiveInput value={glasgow} onChange={(e: any) => setGlasgow(e.target.value)} placeholder="Ej: 15/15" />
+            </ResponsiveField>
+          </div>
+        </ResponsiveCard>
+
+        {/* Examen físico */}
+        <ResponsiveField label="Examen físico">
+          <div className="flex gap-2">
+            <textarea 
+              className="flex-1 px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none" 
+              rows={3} 
+              placeholder="Hallazgos relevantes..." 
+              value={examenFisico} 
+              onChange={(e) => setExamenFisico(e.target.value)} 
+            />
+            <STTButton 
+              onTranscription={(text) => setExamenFisico(prev => prev ? `${prev} ${text}` : text)} 
+            />
+          </div>
+        </ResponsiveField>
+
+        {/* Diagnósticos */}
+        <ResponsiveCard>
+          <h5 className="font-medium text-stone-900 mb-3">Diagnósticos</h5>
+          <ResponsiveField label="Diagnóstico principal (CIE-10)" required>
+            <ResponsiveInput placeholder="Ej: J00 - Rinofaringitis aguda" value={diagnosticoPrincipal} onChange={(e: any) => setDiagnosticoPrincipal(e.target.value)} />
+          </ResponsiveField>
+          <div className="mt-3 space-y-2">
+            <label className="text-sm font-medium text-stone-700">Diagnósticos relacionados</label>
+            {[0, 1, 2].map((idx) => (
+              <ResponsiveField key={idx} label={`${idx + 1}.`}>
+                <ResponsiveInput placeholder={`CIE-10 ${idx + 1}`} value={diagnosticosRelacionados[idx]} onChange={(e: any) => {
+                  const nuevos = [...diagnosticosRelacionados];
+                  nuevos[idx] = e.target.value;
+                  setDiagnosticosRelacionados(nuevos);
+                }} />
               </ResponsiveField>
             ))}
           </div>
         </ResponsiveCard>
 
-        <ResponsiveField label="Antecedentes familiares">
-          <textarea className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none" rows={3} value={antecedentesFamiliares} onChange={(e) => setAntecedentesFamiliares(e.target.value)} />
+        {/* Conducta, Evolución, Análisis */}
+        <ResponsiveField label="Conducta a seguir">
+          <div className="flex gap-2">
+            <textarea 
+              className="flex-1 px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none" 
+              rows={3} 
+              value={conductaSeguir} 
+              onChange={(e) => setConductaSeguir(e.target.value)} 
+            />
+            <STTButton 
+              onTranscription={(text) => setConductaSeguir(prev => prev ? `${prev} ${text}` : text)} 
+            />
+          </div>
         </ResponsiveField>
 
-        <ResponsiveField label="Enfermedad actual">
-          <textarea className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none" rows={3} placeholder="Inicio, duración, características..." value={enfermedadActual} onChange={(e) => setEnfermedadActual(e.target.value)} />
+        <ResponsiveField label="Evolución">
+          <div className="flex gap-2">
+            <textarea 
+              className="flex-1 px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none" 
+              rows={3} 
+              value={evolucion} 
+              onChange={(e) => setEvolucion(e.target.value)} 
+            />
+            <STTButton 
+              onTranscription={(text) => setEvolucion(prev => prev ? `${prev} ${text}` : text)} 
+            />
+          </div>
         </ResponsiveField>
 
-        <div className={`grid gap-3 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-2'}`}>
-          <ResponsiveField label="Presión arterial">
-            <ResponsiveInput placeholder="120/80" />
-          </ResponsiveField>
-          <ResponsiveField label="Frecuencia cardíaca">
-            <ResponsiveInput placeholder="72 lpm" />
-          </ResponsiveField>
-        </div>
-
-        <ResponsiveField label="Examen físico">
-          <textarea className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none" rows={3} placeholder="Hallazgos relevantes..." value={examenFisico} onChange={(e) => setExamenFisico(e.target.value)} />
+        <ResponsiveField label="Análisis">
+          <div className="flex gap-2">
+            <textarea 
+              className="flex-1 px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none" 
+              rows={3} 
+              value={analisis} 
+              onChange={(e) => setAnalisis(e.target.value)} 
+            />
+            <STTButton 
+              onTranscription={(text) => setAnalisis(prev => prev ? `${prev} ${text}` : text)} 
+            />
+          </div>
         </ResponsiveField>
 
-        <ResponsiveField label="Diagnóstico principal (CIE-10)" required>
-          <ResponsiveInput placeholder="Ej: J00 - Rinofaringitis aguda" value={diagnostico} onChange={(e: any) => setDiagnostico(e.target.value)} />
+        {/* Plan de manejo */}
+        <ResponsiveField label="Plan de manejo">
+          <div className="flex gap-2">
+            <textarea 
+              className="flex-1 px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none" 
+              rows={3} 
+              placeholder="Tratamiento, educación, controles..." 
+              value={planManejo} 
+              onChange={(e) => setPlanManejo(e.target.value)} 
+            />
+            <STTButton 
+              onTranscription={(text) => setPlanManejo(prev => prev ? `${prev} ${text}` : text)} 
+            />
+          </div>
         </ResponsiveField>
 
-        <ResponsiveField label="Plan de tratamiento">
-          <textarea className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none" rows={3} placeholder="Tratamiento, educación, controles..." value={planManejo} onChange={(e) => setPlanManejo(e.target.value)} />
+        {/* Egreso */}
+        <ResponsiveField label="Fecha y hora de egreso">
+          <ResponsiveInput type="datetime-local" value={fechaHoraEgreso} onChange={(e: any) => setFechaHoraEgreso(e.target.value)} />
         </ResponsiveField>
 
         <div className={`flex gap-3 ${deviceType === 'mobile' ? 'flex-col' : 'flex-row'}`}>
@@ -1863,12 +2604,26 @@ function ConsultaFormView({ patient, deviceType }: any) {
 
 function RecetaFormView({ patient, deviceType }: any) {
   const [medicamentos, setMedicamentos] = useState<any[]>([]);
-  const [nuevoMedicamento, setNuevoMedicamento] = useState({ nombre: '', dosis: '', frecuencia: '', dias: '' });
+  const [nuevoMedicamento, setNuevoMedicamento] = useState({
+    nombre: '',
+    concentracion: '',
+    forma_farmaceutica: '',
+    via_administracion: '',
+    dosis_frecuencia_duracion: '',
+    cantidad_numerica: '',
+    cantidad_letras: '',
+    entregado: false
+  });
   const [indicaciones, setIndicaciones] = useState('');
+  const [recomendaciones, setRecomendaciones] = useState('');
+  const [codigoDiagnosticoPrincipal, setCodigoDiagnosticoPrincipal] = useState('');
+  const [codigoDiagnosticoRel1, setCodigoDiagnosticoRel1] = useState('');
+  const [codigoDiagnosticoRel2, setCodigoDiagnosticoRel2] = useState('');
   const [loading, setLoading] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [recetaId, setRecetaId] = useState<number | null>(null);
   const [atencionId, setAtencionId] = useState<number | null>(null);
+  const [hcAsociada, setHcAsociada] = useState<any>(null);
 
   useEffect(() => {
     const cargarRecetas = async () => {
@@ -1884,7 +2639,35 @@ function RecetaFormView({ patient, deviceType }: any) {
         // Obtener atencion_id de la consulta activa si existe
         const hcList = await AuthService.get(`/pacientes/${patient.id}/hc/medicina`);
         if (hcList && hcList.length > 0) {
-          setAtencionId(hcList[0].atencion_id);
+          const ultimaHC = hcList[0];
+          setAtencionId(ultimaHC.atencion_id);
+          
+          // Cargar HC completa para obtener diagnósticos
+          const hcCompleta = await AuthService.getHCMedicina(ultimaHC.atencion_id);
+          if (hcCompleta) {
+            setHcAsociada(hcCompleta);
+            // Extraer diagnósticos de la HC
+            if (hcCompleta.diagnosticos_cie10) {
+              try {
+                const diag = typeof hcCompleta.diagnosticos_cie10 === 'string'
+                  ? JSON.parse(hcCompleta.diagnosticos_cie10)
+                  : hcCompleta.diagnosticos_cie10;
+                if (typeof diag === 'object' && diag.principal) {
+                  setCodigoDiagnosticoPrincipal(diag.principal || '');
+                  if (diag.relacionados && diag.relacionados.length > 0) {
+                    setCodigoDiagnosticoRel1(diag.relacionados[0] || '');
+                    if (diag.relacionados.length > 1) {
+                      setCodigoDiagnosticoRel2(diag.relacionados[1] || '');
+                    }
+                  }
+                } else {
+                  setCodigoDiagnosticoPrincipal(hcCompleta.diagnosticos_cie10 || '');
+                }
+              } catch (e) {
+                setCodigoDiagnosticoPrincipal(hcCompleta.diagnosticos_cie10 || '');
+              }
+            }
+          }
         }
 
         // Cargar la última receta activa o más reciente
@@ -1895,6 +2678,10 @@ function RecetaFormView({ patient, deviceType }: any) {
             setMedicamentos(ultimaReceta.medicamentos);
           }
           setIndicaciones(ultimaReceta.indicaciones || '');
+          setRecomendaciones(ultimaReceta.recomendaciones || '');
+          setCodigoDiagnosticoPrincipal(ultimaReceta.codigo_diagnostico_principal || '');
+          setCodigoDiagnosticoRel1(ultimaReceta.codigo_diagnostico_rel1 || '');
+          setCodigoDiagnosticoRel2(ultimaReceta.codigo_diagnostico_rel2 || '');
         }
       } catch (error) {
         console.error('Error cargando recetas:', error);
@@ -1918,10 +2705,26 @@ function RecetaFormView({ patient, deviceType }: any) {
     
     setMedicamentos([...medicamentos, {
       id: nuevoId,
-      ...nuevoMedicamento
+      nombre: nuevoMedicamento.nombre,
+      concentracion: nuevoMedicamento.concentracion,
+      forma_farmaceutica: nuevoMedicamento.forma_farmaceutica,
+      via_administracion: nuevoMedicamento.via_administracion,
+      dosis_frecuencia_duracion: nuevoMedicamento.dosis_frecuencia_duracion,
+      cantidad_numerica: nuevoMedicamento.cantidad_numerica ? parseInt(nuevoMedicamento.cantidad_numerica) : null,
+      cantidad_letras: nuevoMedicamento.cantidad_letras,
+      entregado: nuevoMedicamento.entregado
     }]);
     
-    setNuevoMedicamento({ nombre: '', dosis: '', frecuencia: '', dias: '' });
+    setNuevoMedicamento({
+      nombre: '',
+      concentracion: '',
+      forma_farmaceutica: '',
+      via_administracion: '',
+      dosis_frecuencia_duracion: '',
+      cantidad_numerica: '',
+      cantidad_letras: '',
+      entregado: false
+    });
   };
 
   const eliminarMedicamento = (id: any) => {
@@ -1954,6 +2757,10 @@ function RecetaFormView({ patient, deviceType }: any) {
         fecha_receta: new Date().toISOString().split('T')[0],
         medicamentos: medicamentos,
         indicaciones: indicaciones,
+        recomendaciones: recomendaciones,
+        codigo_diagnostico_principal: codigoDiagnosticoPrincipal || null,
+        codigo_diagnostico_rel1: codigoDiagnosticoRel1 || null,
+        codigo_diagnostico_rel2: codigoDiagnosticoRel2 || null,
         estado: 'Activa'
       };
 
@@ -2064,6 +2871,53 @@ ${indicaciones ? `Indicaciones:\n${indicaciones}` : ''}
         )}
       </div>
       
+      {/* Datos del paciente (solo lectura) */}
+      <div className="mb-4 p-3 bg-stone-50 rounded-lg space-y-2">
+        <div className="grid grid-cols-2 gap-2 text-sm">
+          <div>
+            <span className="font-medium text-stone-700">Nombre:</span>
+            <span className="ml-2 text-stone-900">{patient?.nombre || 'N/A'}</span>
+          </div>
+          <div>
+            <span className="font-medium text-stone-700">No. Identificación/H. Clínica:</span>
+            <span className="ml-2 text-stone-900">{patient?.documento || 'N/A'} {atencionId ? `- HC: ${atencionId}` : ''}</span>
+          </div>
+          <div>
+            <span className="font-medium text-stone-700">Régimen - Empresa:</span>
+            <span className="ml-2 text-stone-900">{patient?.regimen_afiliacion || 'N/A'} {patient?.eapb ? `- ${patient.eapb}` : ''}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Códigos de diagnóstico */}
+      <ResponsiveCard>
+        <h5 className="font-medium text-stone-900 mb-3">Códigos Diagnóstico</h5>
+        <div className={`grid gap-3 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-3'}`}>
+          <ResponsiveField label="PRINCIPAL">
+            <ResponsiveInput 
+              value={codigoDiagnosticoPrincipal}
+              onChange={(e: any) => setCodigoDiagnosticoPrincipal(e.target.value)}
+              placeholder="CIE-10 Principal"
+            />
+          </ResponsiveField>
+          <ResponsiveField label="RELACIONADO 1">
+            <ResponsiveInput 
+              value={codigoDiagnosticoRel1}
+              onChange={(e: any) => setCodigoDiagnosticoRel1(e.target.value)}
+              placeholder="CIE-10 Rel 1"
+            />
+          </ResponsiveField>
+          <ResponsiveField label="RELACIONADO 2">
+            <ResponsiveInput 
+              value={codigoDiagnosticoRel2}
+              onChange={(e: any) => setCodigoDiagnosticoRel2(e.target.value)}
+              placeholder="CIE-10 Rel 2"
+            />
+          </ResponsiveField>
+        </div>
+      </ResponsiveCard>
+
+      {/* Lista de medicamentos */}
       <div className="space-y-3 mb-4">
         {medicamentos.length === 0 ? (
           <div className="text-center py-6 text-stone-500 text-sm">
@@ -2071,128 +2925,220 @@ ${indicaciones ? `Indicaciones:\n${indicaciones}` : ''}
           </div>
         ) : (
           medicamentos.map((med: any) => (
-            <div key={med.id} className="p-3 bg-stone-50 rounded-lg flex items-start justify-between">
-              <div className="flex-1">
-                <div className="font-medium text-stone-900">{med.nombre}</div>
-                <div className="text-sm text-stone-600 mt-1">
-                  {med.dosis && `${med.dosis} • `}
-                  {med.frecuencia && `${med.frecuencia} • `}
-                  {med.dias && `${med.dias} días`}
+            <div key={med.id} className="p-3 bg-stone-50 rounded-lg">
+              <div className="flex items-start justify-between mb-2">
+                <div className="flex-1">
+                  <div className="font-medium text-stone-900">{med.nombre || 'Sin nombre'}</div>
+                  <div className="text-sm text-stone-600 mt-1 space-y-1">
+                    {med.concentracion && <div>Concentración: {med.concentracion}</div>}
+                    {med.forma_farmaceutica && <div>Forma: {med.forma_farmaceutica}</div>}
+                    {med.via_administracion && <div>Vía: {med.via_administracion}</div>}
+                    {med.dosis_frecuencia_duracion && <div>Dosis/Frecuencia/Duración: {med.dosis_frecuencia_duracion}</div>}
+                    {med.cantidad_numerica && <div>Cantidad: {med.cantidad_numerica} ({med.cantidad_letras || ''})</div>}
+                    {med.entregado && <div className="text-green-600">✓ Entregado</div>}
+                  </div>
                 </div>
+                <button
+                  onClick={() => eliminarMedicamento(med.id)}
+                  className="ml-2 p-1 text-red-500 hover:bg-red-50 rounded"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <button
-                onClick={() => eliminarMedicamento(med.id)}
-                className="ml-2 p-1 text-red-500 hover:bg-red-50 rounded"
-              >
-                <X className="w-4 h-4" />
-              </button>
             </div>
           ))
         )}
       </div>
       
-      <div className="space-y-4">
-        <ResponsiveField label="Nombre del medicamento">
-          <ResponsiveInput 
-            value={nuevoMedicamento.nombre}
-            onChange={(e: any) => setNuevoMedicamento({ ...nuevoMedicamento, nombre: e.target.value })}
-            placeholder="Ej: Paracetamol 500mg" 
-          />
-        </ResponsiveField>
-        
-        <div className={`grid gap-3 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-2'}`}>
-          <ResponsiveField label="Dosis">
+      {/* Formulario de nuevo medicamento */}
+      <ResponsiveCard>
+        <h5 className="font-medium text-stone-900 mb-3">Agregar Medicamento</h5>
+        <div className="space-y-4">
+          <ResponsiveField label="Medicamento" required>
             <ResponsiveInput 
-              value={nuevoMedicamento.dosis}
-              onChange={(e: any) => setNuevoMedicamento({ ...nuevoMedicamento, dosis: e.target.value })}
-              placeholder="Ej: 1 tableta" 
+              value={nuevoMedicamento.nombre}
+              onChange={(e: any) => setNuevoMedicamento({ ...nuevoMedicamento, nombre: e.target.value })}
+              placeholder="Nombre del medicamento" 
             />
           </ResponsiveField>
-          <ResponsiveField label="Frecuencia">
-            <ResponsiveInput 
-              value={nuevoMedicamento.frecuencia}
-              onChange={(e: any) => setNuevoMedicamento({ ...nuevoMedicamento, frecuencia: e.target.value })}
-              placeholder="Ej: Cada 8 horas" 
+          
+          <div className={`grid gap-3 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-2'}`}>
+            <ResponsiveField label="Concentración">
+              <ResponsiveInput 
+                value={nuevoMedicamento.concentracion}
+                onChange={(e: any) => setNuevoMedicamento({ ...nuevoMedicamento, concentracion: e.target.value })}
+                placeholder="Ej: 500mg" 
+              />
+            </ResponsiveField>
+            <ResponsiveField label="Forma farmacéutica">
+              <ResponsiveSelect
+                value={nuevoMedicamento.forma_farmaceutica}
+                onChange={(e: any) => setNuevoMedicamento({ ...nuevoMedicamento, forma_farmaceutica: e.target.value })}
+                options={[
+                  { value: '', label: 'Seleccionar...' },
+                  { value: 'Tableta', label: 'Tableta' },
+                  { value: 'Cápsula', label: 'Cápsula' },
+                  { value: 'Jarabe', label: 'Jarabe' },
+                  { value: 'Suspensión', label: 'Suspensión' },
+                  { value: 'Inyección', label: 'Inyección' },
+                  { value: 'Crema', label: 'Crema' },
+                  { value: 'Ungüento', label: 'Ungüento' },
+                  { value: 'Gotas', label: 'Gotas' },
+                  { value: 'Spray', label: 'Spray' },
+                  { value: 'Otro', label: 'Otro' }
+                ]}
+              />
+            </ResponsiveField>
+          </div>
+
+          <ResponsiveField label="Vía de administración">
+            <ResponsiveSelect
+              value={nuevoMedicamento.via_administracion}
+              onChange={(e: any) => setNuevoMedicamento({ ...nuevoMedicamento, via_administracion: e.target.value })}
+              options={[
+                { value: '', label: 'Seleccionar...' },
+                { value: 'Oral', label: 'Oral' },
+                { value: 'Intramuscular', label: 'Intramuscular' },
+                { value: 'Intravenosa', label: 'Intravenosa' },
+                { value: 'Subcutánea', label: 'Subcutánea' },
+                { value: 'Tópica', label: 'Tópica' },
+                { value: 'Oftálmica', label: 'Oftálmica' },
+                { value: 'Ótica', label: 'Ótica' },
+                { value: 'Nasal', label: 'Nasal' },
+                { value: 'Rectal', label: 'Rectal' },
+                { value: 'Vaginal', label: 'Vaginal' },
+                { value: 'Inhalatoria', label: 'Inhalatoria' }
+              ]}
             />
           </ResponsiveField>
+
+          <ResponsiveField label="Dosis, frecuencia y duración del tratamiento">
+            <div className="flex gap-2">
+              <textarea
+                className="flex-1 px-3 py-2 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm resize-none"
+                rows={2}
+                value={nuevoMedicamento.dosis_frecuencia_duracion}
+                onChange={(e: any) => setNuevoMedicamento({ ...nuevoMedicamento, dosis_frecuencia_duracion: e.target.value })}
+                placeholder="Ej: 1 tableta cada 8 horas por 5 días"
+              />
+              <STTButton 
+                onTranscription={(text) => setNuevoMedicamento({ 
+                  ...nuevoMedicamento, 
+                  dosis_frecuencia_duracion: nuevoMedicamento.dosis_frecuencia_duracion 
+                    ? `${nuevoMedicamento.dosis_frecuencia_duracion} ${text}` 
+                    : text 
+                })} 
+              />
+            </div>
+          </ResponsiveField>
+
+          <div className={`grid gap-3 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-2'}`}>
+            <ResponsiveField label="Cantidad (No.)">
+              <ResponsiveInput 
+                type="number"
+                value={nuevoMedicamento.cantidad_numerica}
+                onChange={(e: any) => setNuevoMedicamento({ ...nuevoMedicamento, cantidad_numerica: e.target.value })}
+                placeholder="Ej: 20" 
+              />
+            </ResponsiveField>
+            <ResponsiveField label="Cantidad (Letras)">
+              <ResponsiveInput 
+                value={nuevoMedicamento.cantidad_letras}
+                onChange={(e: any) => setNuevoMedicamento({ ...nuevoMedicamento, cantidad_letras: e.target.value })}
+                placeholder="Ej: Veinte" 
+              />
+            </ResponsiveField>
+          </div>
+
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={nuevoMedicamento.entregado}
+              onChange={(e: any) => setNuevoMedicamento({ ...nuevoMedicamento, entregado: e.target.checked })}
+              className="rounded border-stone-300"
+            />
+            <span className="text-sm text-stone-700">Entregado</span>
+          </label>
+          
+          <ResponsiveButton onClick={agregarMedicamento} className="w-full" variant="secondary">
+            <Plus className="w-4 h-4 mr-2" />
+            Agregar a receta
+          </ResponsiveButton>
         </div>
+      </ResponsiveCard>
 
-        <ResponsiveField label="Duración (días)">
-          <ResponsiveInput 
-            value={nuevoMedicamento.dias}
-            onChange={(e: any) => setNuevoMedicamento({ ...nuevoMedicamento, dias: e.target.value })}
-            placeholder="Ej: 5" 
-          />
-        </ResponsiveField>
-        
-        <ResponsiveButton onClick={agregarMedicamento} className="w-full" variant="secondary">
-          <Plus className="w-4 h-4 mr-2" />
-          Agregar a receta
-        </ResponsiveButton>
-
-        <ResponsiveField label="Indicaciones adicionales">
+      <ResponsiveField label="Indicaciones adicionales">
+        <div className="flex gap-2">
           <textarea
-            className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none"
+            className="flex-1 px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none"
             rows={3}
             value={indicaciones}
             onChange={(e) => setIndicaciones(e.target.value)}
             placeholder="Indicaciones especiales, precauciones, etc..."
           />
-        </ResponsiveField>
-        
-        <div className={`flex gap-3 ${deviceType === 'mobile' ? 'flex-col' : 'flex-row'}`}>
-          <ResponsiveButton 
-            variant="secondary" 
-            onClick={handleGuardar}
-            disabled={guardando}
-            className="flex-1"
-          >
-            <Save className="w-4 h-4 mr-2" />
-            {guardando ? 'Guardando...' : 'Guardar'}
-          </ResponsiveButton>
-          <ResponsiveButton 
-            onClick={handleImprimir}
-            disabled={medicamentos.length === 0 || !recetaId}
-            className="flex-1"
-          >
-            <Download className="w-4 h-4 mr-2" />
-            Imprimir
-          </ResponsiveButton>
-          <ResponsiveButton 
-            variant="secondary"
-            onClick={handleCompartir}
-            disabled={medicamentos.length === 0}
-            className="flex-1"
-          >
-            <Send className="w-4 h-4 mr-2" />
-            Compartir
-          </ResponsiveButton>
+          <STTButton 
+            onTranscription={(text) => setIndicaciones(prev => prev ? `${prev} ${text}` : text)} 
+          />
         </div>
+      </ResponsiveField>
+
+      <ResponsiveField label="Recomendaciones">
+        <div className="flex gap-2">
+          <textarea
+            className="flex-1 px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none"
+            rows={3}
+            value={recomendaciones}
+            onChange={(e) => setRecomendaciones(e.target.value)}
+            placeholder="Recomendaciones para el paciente..."
+          />
+          <STTButton 
+            onTranscription={(text) => setRecomendaciones(prev => prev ? `${prev} ${text}` : text)} 
+          />
+        </div>
+      </ResponsiveField>
+        
+      <div className={`flex gap-3 ${deviceType === 'mobile' ? 'flex-col' : 'flex-row'}`}>
+        <ResponsiveButton 
+          variant="secondary" 
+          onClick={handleGuardar}
+          disabled={guardando}
+          className="flex-1"
+        >
+          <Save className="w-4 h-4 mr-2" />
+          {guardando ? 'Guardando...' : 'Guardar'}
+        </ResponsiveButton>
+        <ResponsiveButton 
+          onClick={handleImprimir}
+          disabled={medicamentos.length === 0 || !recetaId}
+          className="flex-1"
+        >
+          <Download className="w-4 h-4 mr-2" />
+          Imprimir
+        </ResponsiveButton>
+        <ResponsiveButton 
+          variant="secondary"
+          onClick={handleCompartir}
+          disabled={medicamentos.length === 0}
+          className="flex-1"
+        >
+          <Send className="w-4 h-4 mr-2" />
+          Compartir
+        </ResponsiveButton>
       </div>
     </ResponsiveCard>
   );
 }
 
 function ExamenesFormView({ patient, deviceType }: any) {
-  const [examenes, setExamenes] = useState<any[]>([]);
-  const [nuevoExamen, setNuevoExamen] = useState({ tipo: '', nombre: '', justificacion: '', prioridad: 'rutinaria' });
-  const [indicacionesClinicas, setIndicacionesClinicas] = useState('');
+  const [examenesSolicitados, setExamenesSolicitados] = useState('');
+  const [servicio, setServicio] = useState('');
+  const [numeroCarnet, setNumeroCarnet] = useState('');
+  const [diagnosticoJustificacion, setDiagnosticoJustificacion] = useState('');
   const [loading, setLoading] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [ordenId, setOrdenId] = useState<number | null>(null);
   const [atencionId, setAtencionId] = useState<number | null>(null);
 
-  const tiposExamen = [
-    { value: "hemograma", label: "Cuadro hemático completo" },
-    { value: "glicemia", label: "Glicemia en ayunas" },
-    { value: "orina", label: "Parcial de orina" },
-    { value: "radiografia", label: "Radiografía de tórax" },
-    { value: "colesterol", label: "Colesterol total y fracciones" },
-    { value: "tsh", label: "TSH" },
-    { value: "creatinina", label: "Creatinina" },
-    { value: "ecg", label: "Electrocardiograma" },
-    { value: "otros", label: "Otros" }
-  ];
 
   useEffect(() => {
     const cargarOrdenes = async () => {
@@ -2215,10 +3161,11 @@ function ExamenesFormView({ patient, deviceType }: any) {
         if (ordenes && ordenes.length > 0) {
           const ultimaOrden = ordenes[0];
           setOrdenId(ultimaOrden.orden_id);
-          if (ultimaOrden.examenes && Array.isArray(ultimaOrden.examenes)) {
-            setExamenes(ultimaOrden.examenes);
-          }
-          setIndicacionesClinicas(ultimaOrden.indicaciones_clinicas || '');
+          // Usar indicaciones_clinicas como examenes_solicitados
+          setExamenesSolicitados(ultimaOrden.indicaciones_clinicas || '');
+          setServicio(ultimaOrden.servicio || '');
+          setNumeroCarnet(ultimaOrden.numero_carnet || '');
+          setDiagnosticoJustificacion(ultimaOrden.diagnostico_justificacion || '');
         }
       } catch (error) {
         console.error('Error cargando órdenes:', error);
@@ -2230,34 +3177,9 @@ function ExamenesFormView({ patient, deviceType }: any) {
     cargarOrdenes();
   }, [patient?.id]);
 
-  const agregarExamen = () => {
-    if (!nuevoExamen.nombre.trim() || !nuevoExamen.tipo) {
-      alert('Por favor completa el tipo y nombre del examen');
-      return;
-    }
-    
-    const nuevoId = examenes.length > 0 
-      ? Math.max(...examenes.map((e: any) => e.id || 0)) + 1 
-      : 1;
-    
-    setExamenes([...examenes, {
-      id: nuevoId,
-      tipo: nuevoExamen.tipo,
-      nombre: nuevoExamen.nombre,
-      justificacion: nuevoExamen.justificacion,
-      prioridad: nuevoExamen.prioridad
-    }]);
-    
-    setNuevoExamen({ tipo: '', nombre: '', justificacion: '', prioridad: 'rutinaria' });
-  };
-
-  const eliminarExamen = (id: any) => {
-    setExamenes(examenes.filter((e: any) => e.id !== id));
-  };
-
   const handleGuardar = async () => {
-    if (examenes.length === 0) {
-      alert('Agrega al menos un examen a la orden');
+    if (!examenesSolicitados.trim()) {
+      alert('Por favor ingresa los exámenes solicitados');
       return;
     }
 
@@ -2279,8 +3201,10 @@ function ExamenesFormView({ patient, deviceType }: any) {
         paciente_id: patient.id,
         usuario_id: user.id,
         fecha_orden: new Date().toISOString().split('T')[0],
-        examenes: examenes,
-        indicaciones_clinicas: indicacionesClinicas,
+        examenes_solicitados: examenesSolicitados,
+        servicio: servicio || null,
+        numero_carnet: numeroCarnet || null,
+        diagnostico_justificacion: diagnosticoJustificacion || null,
         estado: 'Pendiente'
       };
 
@@ -2306,14 +3230,16 @@ function ExamenesFormView({ patient, deviceType }: any) {
       
       Paciente: ${patient?.nombre || 'N/A'}
       Documento: ${patient?.documento || 'N/A'}
+      H.C. N°: ${atencionId || 'N/A'}
+      E.P.S.: ${patient?.eps || 'N/A'}
+      Servicio: ${servicio || 'N/A'}
+      N° Carnet: ${numeroCarnet || 'N/A'}
       Fecha: ${new Date().toLocaleDateString('es-ES')}
       
-      EXÁMENES SOLICITADOS:
-      ${examenes.map((e: any, idx: number) => 
-        `${idx + 1}. ${e.nombre} (${e.tipo}) - Prioridad: ${e.prioridad}${e.justificacion ? `\n   Justificación: ${e.justificacion}` : ''}`
-      ).join('\n\n')}
+      Diagnóstico: ${diagnosticoJustificacion || 'N/A'}
       
-      ${indicacionesClinicas ? `INDICACIONES CLÍNICAS:\n${indicacionesClinicas}` : ''}
+      EXÁMENES SOLICITADOS:
+      ${examenesSolicitados || 'N/A'}
     `;
     
     const ventanaImpresion = window.open('', '_blank');
@@ -2341,14 +3267,16 @@ function ExamenesFormView({ patient, deviceType }: any) {
 Orden de Laboratorio / Exámenes
 Paciente: ${patient?.nombre || 'N/A'}
 Documento: ${patient?.documento || 'N/A'}
+H.C. N°: ${atencionId || 'N/A'}
+E.P.S.: ${patient?.eps || 'N/A'}
+Servicio: ${servicio || 'N/A'}
+N° Carnet: ${numeroCarnet || 'N/A'}
 Fecha: ${new Date().toLocaleDateString('es-ES')}
 
-Exámenes Solicitados:
-${examenes.map((e: any, idx: number) => 
-  `${idx + 1}. ${e.nombre} (${e.tipo}) - Prioridad: ${e.prioridad}${e.justificacion ? `\n   Justificación: ${e.justificacion}` : ''}`
-).join('\n\n')}
+Diagnóstico: ${diagnosticoJustificacion || 'N/A'}
 
-${indicacionesClinicas ? `Indicaciones Clínicas:\n${indicacionesClinicas}` : ''}
+Exámenes Solicitados:
+${examenesSolicitados || 'N/A'}
     `.trim();
 
     if (navigator.share) {
@@ -2388,132 +3316,117 @@ ${indicacionesClinicas ? `Indicaciones Clínicas:\n${indicacionesClinicas}` : ''
           <ResponsiveBadge tone="admin">Orden #{ordenId}</ResponsiveBadge>
         )}
       </div>
-      <div className="space-y-4">
-        <div className="space-y-3 mb-4">
-          {examenes.length === 0 ? (
-            <div className="text-center py-6 text-stone-500 text-sm">
-              No hay exámenes agregados. Agrega exámenes a continuación.
-            </div>
-          ) : (
-            examenes.map((exam: any) => (
-              <div key={exam.id} className="p-3 bg-stone-50 rounded-lg flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="font-medium text-stone-900">{exam.nombre}</div>
-                  <div className="text-sm text-stone-600 mt-1">
-                    Tipo: {tiposExamen.find(t => t.value === exam.tipo)?.label || exam.tipo} • 
-                    Prioridad: {exam.prioridad}
-                  </div>
-                  {exam.justificacion && (
-                    <div className="text-xs text-stone-500 mt-1">
-                      {exam.justificacion}
-                    </div>
-                  )}
-                </div>
-                <button
-                  onClick={() => eliminarExamen(exam.id)}
-                  className="ml-2 p-1 text-red-500 hover:bg-red-50 rounded"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            ))
-          )}
+      {/* Datos del paciente (solo lectura) */}
+      <div className="mb-4 p-3 bg-stone-50 rounded-lg space-y-2">
+        <div className="grid grid-cols-2 gap-2 text-sm">
+          <div>
+            <span className="font-medium text-stone-700">Fecha:</span>
+            <span className="ml-2 text-stone-900">{new Date().toLocaleDateString('es-ES')}</span>
+          </div>
+          <div>
+            <span className="font-medium text-stone-700">H.C. N°:</span>
+            <span className="ml-2 text-stone-900">{atencionId || 'N/A'}</span>
+          </div>
+          <div>
+            <span className="font-medium text-stone-700">Nombre:</span>
+            <span className="ml-2 text-stone-900">{patient?.nombre || 'N/A'}</span>
+          </div>
+          <div>
+            <span className="font-medium text-stone-700">E.P.S.:</span>
+            <span className="ml-2 text-stone-900">{patient?.eps || 'N/A'}</span>
+          </div>
         </div>
+      </div>
 
-        <ResponsiveField label="Tipo de examen" required>
-          <select
-            className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base"
-            value={nuevoExamen.tipo}
-            onChange={(e) => {
-              const tipo = e.target.value;
-              setNuevoExamen({ 
-                ...nuevoExamen, 
-                tipo,
-                nombre: tipo === 'otros' ? '' : (tiposExamen.find(t => t.value === tipo)?.label || '')
-              });
-            }}
-          >
-            <option value="">Seleccionar examen</option>
-            {tiposExamen.map(tipo => (
-              <option key={tipo.value} value={tipo.value}>{tipo.label}</option>
-            ))}
-          </select>
-        </ResponsiveField>
+      {/* SERVICIOS */}
+      <ResponsiveCard>
+        <h5 className="font-medium text-stone-900 mb-3">SERVICIOS</h5>
+        <div className="flex flex-wrap gap-4">
+          {['Consulta Externa', 'Hospitalización', 'Urgencias', 'Programas'].map((serv) => (
+            <label key={serv} className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="servicio"
+                value={serv}
+                checked={servicio === serv}
+                onChange={(e: any) => setServicio(e.target.value)}
+                className="rounded border-stone-300"
+              />
+              <span className="text-sm text-stone-700">{serv}</span>
+            </label>
+          ))}
+        </div>
+      </ResponsiveCard>
 
-        <ResponsiveField label="Nombre del examen" required>
+      {/* N° Carnet y Diagnóstico */}
+      <div className={`grid gap-3 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-2'}`}>
+        <ResponsiveField label="N° Carnet">
           <ResponsiveInput 
-            value={nuevoExamen.nombre}
-            onChange={(e: any) => setNuevoExamen({ ...nuevoExamen, nombre: e.target.value })}
-            placeholder={nuevoExamen.tipo === 'otros' ? "Especificar examen" : "Nombre del examen"}
-            disabled={nuevoExamen.tipo !== 'otros' && nuevoExamen.tipo !== ''}
+            value={numeroCarnet}
+            onChange={(e: any) => setNumeroCarnet(e.target.value)}
+            placeholder="Número de carnet"
           />
         </ResponsiveField>
-        
-        <ResponsiveField label="Justificación clínica">
+      </div>
+
+      <ResponsiveField label="Diagnóstico">
+        <div className="flex gap-2">
           <textarea
-            className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none"
-            rows={2}
-            value={nuevoExamen.justificacion}
-            onChange={(e) => setNuevoExamen({ ...nuevoExamen, justificacion: e.target.value })}
-            placeholder="Justificación médica para este examen..."
-          />
-        </ResponsiveField>
-
-        <ResponsiveField label="Prioridad">
-          <select
-            className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base"
-            value={nuevoExamen.prioridad}
-            onChange={(e) => setNuevoExamen({ ...nuevoExamen, prioridad: e.target.value })}
-          >
-            <option value="rutinaria">Rutinaria</option>
-            <option value="prioritaria">Prioritaria</option>
-            <option value="urgente">Urgente</option>
-          </select>
-        </ResponsiveField>
-
-        <ResponsiveButton onClick={agregarExamen} className="w-full" variant="secondary">
-          <Plus className="w-4 h-4 mr-2" />
-          Agregar a orden
-        </ResponsiveButton>
-
-        <ResponsiveField label="Indicaciones clínicas generales">
-          <textarea
-            className="w-full px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none"
+            className="flex-1 px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none"
             rows={3}
-            value={indicacionesClinicas}
-            onChange={(e) => setIndicacionesClinicas(e.target.value)}
-            placeholder="Indicaciones clínicas generales para todos los exámenes..."
+            value={diagnosticoJustificacion}
+            onChange={(e: any) => setDiagnosticoJustificacion(e.target.value)}
+            placeholder="Diagnóstico o justificación..."
           />
-        </ResponsiveField>
-        
-        <div className={`flex gap-3 ${deviceType === 'mobile' ? 'flex-col' : 'flex-row'}`}>
-          <ResponsiveButton 
-            variant="secondary" 
-            onClick={handleGuardar}
-            disabled={guardando}
-            className="flex-1"
-          >
-            <Save className="w-4 h-4 mr-2" />
-            {guardando ? 'Guardando...' : 'Guardar'}
-          </ResponsiveButton>
-          <ResponsiveButton 
-            onClick={handleImprimir}
-            disabled={examenes.length === 0 || !ordenId}
-            className="flex-1"
-          >
-            <Download className="w-4 h-4 mr-2" />
-            Imprimir
-          </ResponsiveButton>
-          <ResponsiveButton 
-            variant="secondary"
-            onClick={handleCompartir}
-            disabled={examenes.length === 0}
-            className="flex-1"
-          >
-            <Send className="w-4 h-4 mr-2" />
-            Compartir
-          </ResponsiveButton>
+          <STTButton 
+            onTranscription={(text) => setDiagnosticoJustificacion(prev => prev ? `${prev} ${text}` : text)} 
+          />
         </div>
+      </ResponsiveField>
+
+      {/* EXÁMENES SOLICITADOS */}
+      <ResponsiveField label="EXÁMENES SOLICITADOS" required>
+        <div className="flex gap-2">
+          <textarea
+            className="flex-1 px-3 py-2 md:py-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm md:text-base resize-none"
+            rows={8}
+            value={examenesSolicitados}
+            onChange={(e: any) => setExamenesSolicitados(e.target.value)}
+            placeholder="Liste los exámenes solicitados (uno por línea o separados por comas)..."
+          />
+          <STTButton 
+            onTranscription={(text) => setExamenesSolicitados(prev => prev ? `${prev} ${text}` : text)} 
+          />
+        </div>
+      </ResponsiveField>
+        
+      <div className={`flex gap-3 ${deviceType === 'mobile' ? 'flex-col' : 'flex-row'}`}>
+        <ResponsiveButton 
+          variant="secondary" 
+          onClick={handleGuardar}
+          disabled={guardando}
+          className="flex-1"
+        >
+          <Save className="w-4 h-4 mr-2" />
+          {guardando ? 'Guardando...' : 'Guardar'}
+        </ResponsiveButton>
+        <ResponsiveButton 
+          onClick={handleImprimir}
+          disabled={!examenesSolicitados.trim() || !ordenId}
+          className="flex-1"
+        >
+          <Download className="w-4 h-4 mr-2" />
+          Imprimir
+        </ResponsiveButton>
+        <ResponsiveButton 
+          variant="secondary"
+          onClick={handleCompartir}
+          disabled={!examenesSolicitados.trim()}
+          className="flex-1"
+        >
+          <Send className="w-4 h-4 mr-2" />
+          Compartir
+        </ResponsiveButton>
       </div>
     </ResponsiveCard>
   );
@@ -3166,20 +4079,33 @@ function FormularioCaracterizacionView({ familia, caracterizacionExistente, onSa
     numero_ficha: '',
     zona: 'Urbana',
     territorio: '',
+    micro_territorio: '',
+    barrio: '',
+    numero_personas: null,
     estrato: null,
     tipo_familia: '',
     riesgo_familiar: '',
     fecha_caracterizacion: new Date().toISOString().split('T')[0],
     info_vivienda: {
-      funcionalidad: [],
-      sobrecarga: [],
-      ecomapa: [],
+      familiograma: [],
+      funcionalidad: {
+        tipo: [],
+        escala: null
+      },
+      sobrecarga: '',
+      ecomapa: '',
       observaciones: '',
       te_quiere: false,
       nn_discapacidad_adulto_mayor_enfermedad: false
     },
     situaciones_proteccion: [],
-    condiciones_salud_publica: [],
+    condiciones_salud_publica: {
+      sucesos_vitales: false,
+      cuidado_salud_criticos: false,
+      obtiene_alimento: '',
+      asis_estado: false,
+      asis_estado_cual: ''
+    },
     practicas_cuidado: {
       hab_saludables: false,
       rec_socioemoc: false,
@@ -3216,8 +4142,50 @@ function FormularioCaracterizacionView({ familia, caracterizacionExistente, onSa
           pertenencia_etnica: '',
           discapacidad: [],
           victima_violencia: false,
-          datos_pyp: {},
-          datos_salud: {}
+          telefono_1: '',
+          orientacion_sexual: '',
+          comunidad_indigena: false,
+          tiempo_cuidador: '',
+          datos_pyp: {
+            cumple_esquema_pym: false,
+            odont_pym: false,
+            lactancia: false,
+            fluor: false,
+            profilaxis: false,
+            vacunacion: false,
+            micronutientes: false,
+            suplementacion: [],
+            desparasitacion: false,
+            anemia_hemog: false,
+            its: false,
+            t_ca_cuello: false,
+            t_ca_mama: false,
+            t_ca_prostata: false,
+            t_ca_colon: false,
+            preconcepcional: [],
+            prenatal: false,
+            curso_preparacion: false,
+            ive: false,
+            puerperio: false,
+            recien_nacido: false,
+            preparacion: false,
+            educacion: false,
+            motivo_no_atencion_pym: [],
+            si_es_menor_6_meses_lactancia: false,
+            si_es_menor_2_anos_meses_lact: null,
+            menor_de_5_anos: false
+          },
+          datos_salud: {
+            peso: null,
+            talla: null,
+            diagnostico: '',
+            signos_desnutricion_aguda: [],
+            enf_ultimo_mes: false,
+            cuales_enf_ultimo_mes: '',
+            tto: false,
+            tiempo_cuidador: '',
+            motivo_no_atencion: []
+          }
         }));
         
         setFormData(prev => ({
@@ -3228,20 +4196,78 @@ function FormularioCaracterizacionView({ familia, caracterizacionExistente, onSa
         // Si hay caracterización existente, cargarla
         if (caracterizacionExistente?.tiene_caracterizacion) {
           const familiaData = caracterizacionExistente.familia;
+          // Parsear JSON si vienen como string
+          const infoVivienda = typeof familiaData.info_vivienda === 'string' 
+            ? JSON.parse(familiaData.info_vivienda) 
+            : (familiaData.info_vivienda || {});
+          const condicionesSalud = typeof familiaData.condiciones_salud_publica === 'string'
+            ? JSON.parse(familiaData.condiciones_salud_publica)
+            : (familiaData.condiciones_salud_publica || {});
+          const situacionesProteccion = Array.isArray(familiaData.situaciones_proteccion)
+            ? familiaData.situaciones_proteccion
+            : (typeof familiaData.situaciones_proteccion === 'string' ? JSON.parse(familiaData.situaciones_proteccion) : []);
+          
           setFormData(prev => ({
             ...prev,
             numero_ficha: familiaData.numero_ficha || '',
             zona: familiaData.zona || 'Urbana',
             territorio: familiaData.territorio || '',
+            micro_territorio: familiaData.micro_territorio || '',
+            barrio: familiaData.barrio || '',
+            numero_personas: familiaData.numero_personas || null,
             estrato: familiaData.estrato || null,
             tipo_familia: familiaData.tipo_familia || '',
             riesgo_familiar: familiaData.riesgo_familiar || '',
             fecha_caracterizacion: familiaData.fecha_caracterizacion || new Date().toISOString().split('T')[0],
-            info_vivienda: familiaData.info_vivienda || prev.info_vivienda,
-            situaciones_proteccion: familiaData.situaciones_proteccion || [],
-            condiciones_salud_publica: familiaData.condiciones_salud_publica || [],
+            info_vivienda: {
+              ...prev.info_vivienda,
+              ...infoVivienda
+            },
+            situaciones_proteccion: situacionesProteccion,
+            condiciones_salud_publica: {
+              ...prev.condiciones_salud_publica,
+              ...condicionesSalud
+            },
             practicas_cuidado: familiaData.practicas_cuidado || prev.practicas_cuidado
           }));
+
+          // Cargar datos de integrantes existentes
+          if (caracterizacionExistente.integrantes && Array.isArray(caracterizacionExistente.integrantes)) {
+            const integrantesCargados = integrantesForm.map((integranteForm: any) => {
+              const integranteExistente = caracterizacionExistente.integrantes.find(
+                (i: any) => i.paciente_id === integranteForm.paciente_id
+              );
+              
+              if (integranteExistente) {
+                // Parsear campos JSON
+                const datosPyp = typeof integranteExistente.datos_pyp === 'string'
+                  ? JSON.parse(integranteExistente.datos_pyp)
+                  : (integranteExistente.datos_pyp || {});
+                const datosSalud = typeof integranteExistente.datos_salud === 'string'
+                  ? JSON.parse(integranteExistente.datos_salud)
+                  : (integranteExistente.datos_salud || {});
+                
+                return {
+                  ...integranteForm,
+                  ...integranteExistente,
+                  datos_pyp: {
+                    ...integranteForm.datos_pyp,
+                    ...datosPyp
+                  },
+                  datos_salud: {
+                    ...integranteForm.datos_salud,
+                    ...datosSalud
+                  }
+                };
+              }
+              return integranteForm;
+            });
+            
+            setFormData(prev => ({
+              ...prev,
+              integrantes: integrantesCargados
+            }));
+          }
         }
       } catch (error) {
         console.error('Error cargando datos:', error);
@@ -3269,6 +4295,9 @@ function FormularioCaracterizacionView({ familia, caracterizacionExistente, onSa
           numero_ficha: formData.numero_ficha,
           zona: formData.zona,
           territorio: formData.territorio,
+          micro_territorio: formData.micro_territorio,
+          barrio: formData.barrio,
+          numero_personas: formData.numero_personas,
           estrato: formData.estrato,
           tipo_familia: formData.tipo_familia,
           riesgo_familiar: formData.riesgo_familiar,
@@ -3278,7 +4307,11 @@ function FormularioCaracterizacionView({ familia, caracterizacionExistente, onSa
           condiciones_salud_publica: formData.condiciones_salud_publica,
           practicas_cuidado: formData.practicas_cuidado
         },
-        integrantes: formData.integrantes
+        integrantes: formData.integrantes.map((integrante: any) => ({
+          ...integrante,
+          // Asegurar que tiempo_cuidador esté en el nivel superior si está en datos_salud
+          tiempo_cuidador: integrante.tiempo_cuidador || integrante.datos_salud?.tiempo_cuidador
+        }))
       };
       
       await AuthService.crearCaracterizacion(payload);
@@ -3313,6 +4346,21 @@ function FormularioCaracterizacionView({ familia, caracterizacionExistente, onSa
     }));
   };
 
+  const updateIntegranteNested = (index: number, section: 'datos_pyp' | 'datos_salud', field: string, value: any) => {
+    setFormData(prev => ({
+      ...prev,
+      integrantes: prev.integrantes.map((integrante, i) => 
+        i === index ? { 
+          ...integrante, 
+          [section]: {
+            ...(integrante[section] || {}),
+            [field]: value
+          }
+        } : integrante
+      )
+    }));
+  };
+
   const renderTabContent = () => {
     switch (activeTab) {
       case 0: // Ubicación
@@ -3332,7 +4380,8 @@ function FormularioCaracterizacionView({ familia, caracterizacionExistente, onSa
                   onChange={(e: any) => setFormData(prev => ({ ...prev, zona: e.target.value }))}
                   options={[
                     { value: 'Urbana', label: 'Urbana' },
-                    { value: 'Rural', label: 'Rural' }
+                    { value: 'Rural', label: 'Rural' },
+                    { value: 'Corregimiento', label: 'Corregimiento' }
                   ]}
                 />
               </ResponsiveField>
@@ -3341,6 +4390,28 @@ function FormularioCaracterizacionView({ familia, caracterizacionExistente, onSa
                   value={formData.territorio}
                   onChange={(e: any) => setFormData(prev => ({ ...prev, territorio: e.target.value }))}
                   placeholder="Ej: Comuna 19"
+                />
+              </ResponsiveField>
+              <ResponsiveField label="Micro Territorio">
+                <ResponsiveInput
+                  value={formData.micro_territorio}
+                  onChange={(e: any) => setFormData(prev => ({ ...prev, micro_territorio: e.target.value }))}
+                  placeholder="Micro territorio"
+                />
+              </ResponsiveField>
+              <ResponsiveField label="Barrio">
+                <ResponsiveInput
+                  value={formData.barrio}
+                  onChange={(e: any) => setFormData(prev => ({ ...prev, barrio: e.target.value }))}
+                  placeholder="Nombre del barrio"
+                />
+              </ResponsiveField>
+              <ResponsiveField label="Número de Personas (# Pers.)">
+                <ResponsiveInput
+                  type="number"
+                  value={formData.numero_personas || ''}
+                  onChange={(e: any) => setFormData(prev => ({ ...prev, numero_personas: parseInt(e.target.value) || null }))}
+                  placeholder="Cantidad de integrantes"
                 />
               </ResponsiveField>
               <ResponsiveField label="Estrato">
@@ -3391,12 +4462,141 @@ function FormularioCaracterizacionView({ familia, caracterizacionExistente, onSa
                 />
               </ResponsiveField>
             </div>
+
+            <ResponsiveCard>
+              <h5 className="font-medium text-stone-900 mb-3">Familiograma</h5>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                {['Ries. Biológico', 'Ries. Psicológico', 'Ries. Social'].map((opcion) => (
+                  <label key={opcion} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="rounded border-stone-300"
+                      checked={formData.info_vivienda.familiograma?.includes(opcion) || false}
+                      onChange={(e: any) => {
+                        const current = formData.info_vivienda.familiograma || [];
+                        const newValue = e.target.checked
+                          ? [...current, opcion]
+                          : current.filter((item: string) => item !== opcion);
+                        updateFormData('info_vivienda', 'familiograma', newValue);
+                      }}
+                    />
+                    {opcion}
+                  </label>
+                ))}
+              </div>
+            </ResponsiveCard>
+
+            <ResponsiveCard>
+              <h5 className="font-medium text-stone-900 mb-3">Funcionalidad</h5>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                  {['Ayuda', 'Conversan', 'Decisiones', 'Comparten'].map((tipo) => (
+                    <label key={tipo} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="rounded border-stone-300"
+                        checked={formData.info_vivienda.funcionalidad?.tipo?.includes(tipo) || false}
+                        onChange={(e: any) => {
+                          const current = formData.info_vivienda.funcionalidad?.tipo || [];
+                          const newTipos = e.target.checked
+                            ? [...current, tipo]
+                            : current.filter((item: string) => item !== tipo);
+                          setFormData(prev => ({
+                            ...prev,
+                            info_vivienda: {
+                              ...prev.info_vivienda,
+                              funcionalidad: {
+                                ...prev.info_vivienda.funcionalidad,
+                                tipo: newTipos
+                              }
+                            }
+                          }));
+                        }}
+                      />
+                      {tipo}
+                    </label>
+                  ))}
+                </div>
+                <ResponsiveField label="Escala Funcionalidad (0-10)">
+                  <ResponsiveInput
+                    type="number"
+                    min="0"
+                    max="10"
+                    value={formData.info_vivienda.funcionalidad?.escala || ''}
+                    onChange={(e: any) => {
+                      const escala = e.target.value ? parseInt(e.target.value) : null;
+                      setFormData(prev => ({
+                        ...prev,
+                        info_vivienda: {
+                          ...prev.info_vivienda,
+                          funcionalidad: {
+                            ...prev.info_vivienda.funcionalidad,
+                            escala
+                          }
+                        }
+                      }));
+                    }}
+                    placeholder="0-10"
+                  />
+                </ResponsiveField>
+              </div>
+            </ResponsiveCard>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <ResponsiveField label="Sobrecarga">
+                <ResponsiveSelect
+                  value={formData.info_vivienda.sobrecarga || ''}
+                  onChange={(e: any) => updateFormData('info_vivienda', 'sobrecarga', e.target.value)}
+                  options={[
+                    { value: '', label: 'Seleccionar...' },
+                    { value: '1. Ausencia', label: '1. Ausencia' },
+                    { value: '2. Sobrecarga', label: '2. Sobrecarga' },
+                    { value: '3. Sobrecarga intensa', label: '3. Sobrecarga intensa' }
+                  ]}
+                />
+              </ResponsiveField>
+              <ResponsiveField label="Ecomapa">
+                <ResponsiveSelect
+                  value={formData.info_vivienda.ecomapa || ''}
+                  onChange={(e: any) => updateFormData('info_vivienda', 'ecomapa', e.target.value)}
+                  options={[
+                    { value: '', label: 'Seleccionar...' },
+                    { value: '1. Positivo', label: '1. Positivo' },
+                    { value: '2. Tenue', label: '2. Tenue' },
+                    { value: '3. Estresante', label: '3. Estresante' },
+                    { value: '4. Energía fluye', label: '4. Energía fluye' },
+                    { value: '5. Intenso', label: '5. Intenso' }
+                  ]}
+                />
+              </ResponsiveField>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="rounded border-stone-300"
+                  checked={formData.info_vivienda.te_quiere || false}
+                  onChange={(e: any) => updateFormData('info_vivienda', 'te_quiere', e.target.checked)}
+                />
+                ¿Te quiere?
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="rounded border-stone-300"
+                  checked={formData.info_vivienda.nn_discapacidad_adulto_mayor_enfermedad || false}
+                  onChange={(e: any) => updateFormData('info_vivienda', 'nn_discapacidad_adulto_mayor_enfermedad', e.target.checked)}
+                />
+                NN, discapacidad, adulto mayor, enfermedad
+              </label>
+            </div>
             
             <ResponsiveField label="Observaciones">
               <textarea
                 className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none"
                 rows={3}
-                value={formData.info_vivienda.observaciones}
+                value={formData.info_vivienda.observaciones || ''}
                 onChange={(e: any) => updateFormData('info_vivienda', 'observaciones', e.target.value)}
                 placeholder="Observaciones adicionales..."
               />
@@ -3409,7 +4609,7 @@ function FormularioCaracterizacionView({ familia, caracterizacionExistente, onSa
           <div className="space-y-4">
             <ResponsiveField label="Situaciones de Especial Protección">
               <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                {['NNA', 'GESTANTES', 'ADULTOS MAYORES', 'TB', 'LEPRA', 'ESCABIOSIS', 'MALARIA', 'DENGUE', 'CHAGAS'].map(option => (
+                {['NNA', 'GESTANTES', 'ADULTOS MAYORES', 'TB', 'LEPRA', 'ESCABIOSIS', 'MALARIA', 'DENGUE', 'CHAGAS', 'Hep. A', 'ENF. HUÉRFANA O TERMINAL', 'INMUNOPREVENIBLE', 'Vulnerabilidad Social', 'DISCAPACIDAD', 'OTRAS'].map(option => (
                   <label key={option} className="flex items-center gap-2 text-sm">
                     <input
                       type="checkbox"
@@ -3426,6 +4626,95 @@ function FormularioCaracterizacionView({ familia, caracterizacionExistente, onSa
                 ))}
               </div>
             </ResponsiveField>
+
+            <ResponsiveCard>
+              <h5 className="font-medium text-stone-900 mb-3">Condiciones de Salud Pública</h5>
+              <div className="space-y-3">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="rounded border-stone-300"
+                    checked={formData.condiciones_salud_publica.sucesos_vitales || false}
+                    onChange={(e: any) => setFormData(prev => ({
+                      ...prev,
+                      condiciones_salud_publica: {
+                        ...prev.condiciones_salud_publica,
+                        sucesos_vitales: e.target.checked
+                      }
+                    }))}
+                  />
+                  Sucesos vitales normativos o no normativos
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="rounded border-stone-300"
+                    checked={formData.condiciones_salud_publica.cuidado_salud_criticos || false}
+                    onChange={(e: any) => setFormData(prev => ({
+                      ...prev,
+                      condiciones_salud_publica: {
+                        ...prev.condiciones_salud_publica,
+                        cuidado_salud_criticos: e.target.checked
+                      }
+                    }))}
+                  />
+                  Cuidado de salud críticos
+                </label>
+                <ResponsiveField label="Obtiene alimento">
+                  <ResponsiveSelect
+                    value={formData.condiciones_salud_publica.obtiene_alimento || ''}
+                    onChange={(e: any) => setFormData(prev => ({
+                      ...prev,
+                      condiciones_salud_publica: {
+                        ...prev.condiciones_salud_publica,
+                        obtiene_alimento: e.target.value
+                      }
+                    }))}
+                    options={[
+                      { value: '', label: 'Seleccionar...' },
+                      { value: 'CULTIVA', label: 'Cultiva' },
+                      { value: 'CRÍA', label: 'Cría' },
+                      { value: 'CAZERÍA', label: 'Cazería' },
+                      { value: 'RECOLECCIÓN', label: 'Recolección' },
+                      { value: 'TRUEQUE', label: 'Trueque' },
+                      { value: 'COMPRA', label: 'Compra' },
+                      { value: 'Asis estado', label: 'Asistencia del estado' },
+                      { value: 'OTRA', label: 'Otra' }
+                    ]}
+                  />
+                </ResponsiveField>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="rounded border-stone-300"
+                    checked={formData.condiciones_salud_publica.asis_estado || false}
+                    onChange={(e: any) => setFormData(prev => ({
+                      ...prev,
+                      condiciones_salud_publica: {
+                        ...prev.condiciones_salud_publica,
+                        asis_estado: e.target.checked
+                      }
+                    }))}
+                  />
+                  Asistencia del estado
+                </label>
+                {formData.condiciones_salud_publica.asis_estado && (
+                  <ResponsiveField label="¿Cuál?">
+                    <ResponsiveInput
+                      value={formData.condiciones_salud_publica.asis_estado_cual || ''}
+                      onChange={(e: any) => setFormData(prev => ({
+                        ...prev,
+                        condiciones_salud_publica: {
+                          ...prev.condiciones_salud_publica,
+                          asis_estado_cual: e.target.value
+                        }
+                      }))}
+                      placeholder="Especificar asistencia"
+                    />
+                  </ResponsiveField>
+                )}
+              </div>
+            </ResponsiveCard>
           </div>
         );
 
@@ -3499,6 +4788,496 @@ function FormularioCaracterizacionView({ familia, caracterizacionExistente, onSa
                       ]}
                     />
                   </ResponsiveField>
+                  <ResponsiveField label="Teléfono 1">
+                    <ResponsiveInput
+                      value={formData.integrantes[index]?.telefono_1 || ''}
+                      onChange={(e: any) => updateIntegrante(index, 'telefono_1', e.target.value)}
+                      placeholder="Número de teléfono"
+                    />
+                  </ResponsiveField>
+                  <ResponsiveField label="Régimen de Afiliación">
+                    <ResponsiveSelect
+                      value={formData.integrantes[index]?.regimen_afiliacion || ''}
+                      onChange={(e: any) => updateIntegrante(index, 'regimen_afiliacion', e.target.value)}
+                      options={[
+                        { value: '', label: 'Seleccionar...' },
+                        { value: 'Subsidiado', label: 'Subsidiado' },
+                        { value: 'Contributivo', label: 'Contributivo' },
+                        { value: 'Especial', label: 'Especial' },
+                        { value: 'Excepción', label: 'Excepción' },
+                        { value: 'No afiliado', label: 'No afiliado' },
+                        { value: 'EAPB', label: 'EAPB' }
+                      ]}
+                    />
+                  </ResponsiveField>
+                  <ResponsiveField label="Pertenencia Étnica">
+                    <ResponsiveSelect
+                      value={formData.integrantes[index]?.pertenencia_etnica || ''}
+                      onChange={(e: any) => updateIntegrante(index, 'pertenencia_etnica', e.target.value)}
+                      options={[
+                        { value: '', label: 'Seleccionar...' },
+                        { value: 'Indígena', label: 'Indígena' },
+                        { value: 'Rom', label: 'Rom' },
+                        { value: 'Raizal', label: 'Raizal' },
+                        { value: 'Palenquero', label: 'Palenquero' },
+                        { value: 'Negro, Afro', label: 'Negro, Afro' },
+                        { value: 'Otro', label: 'Otro' },
+                        { value: 'Ninguna', label: 'Ninguna' }
+                      ]}
+                    />
+                  </ResponsiveField>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="rounded border-stone-300"
+                      checked={formData.integrantes[index]?.orientacion_sexual === 'Si' || false}
+                      onChange={(e: any) => updateIntegrante(index, 'orientacion_sexual', e.target.checked ? 'Si' : 'No')}
+                    />
+                    Orientación sexual diversa
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="rounded border-stone-300"
+                      checked={formData.integrantes[index]?.comunidad_indigena || false}
+                      onChange={(e: any) => updateIntegrante(index, 'comunidad_indigena', e.target.checked)}
+                    />
+                    Comunidad o pueblo indígena
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="rounded border-stone-300"
+                      checked={formData.integrantes[index]?.victima_violencia || false}
+                      onChange={(e: any) => updateIntegrante(index, 'victima_violencia', e.target.checked)}
+                    />
+                    Víctima de violencia
+                  </label>
+                  <ResponsiveField label="Discapacidad">
+                    <div className="grid grid-cols-2 gap-2">
+                      {['Física', 'Auditiva', 'Visual', 'Sordoceguera', 'Intelectual', 'Psicosocial', 'Múltiple', 'Otra', 'Ninguna'].map((disc) => (
+                        <label key={disc} className="flex items-center gap-2 text-xs">
+                          <input
+                            type="checkbox"
+                            className="rounded border-stone-300"
+                            checked={formData.integrantes[index]?.discapacidad?.includes(disc) || false}
+                            onChange={(e: any) => {
+                              const current = formData.integrantes[index]?.discapacidad || [];
+                              const newDiscapacidades = e.target.checked
+                                ? [...current, disc]
+                                : current.filter((item: string) => item !== disc);
+                              updateIntegrante(index, 'discapacidad', newDiscapacidades);
+                            }}
+                          />
+                          {disc}
+                        </label>
+                      ))}
+                    </div>
+                  </ResponsiveField>
+                </div>
+
+                {/* Sección: Datos PYM (Prevención y Promoción) */}
+                <div className="mt-6 pt-6 border-t border-stone-200">
+                  <h6 className="font-semibold text-stone-900 mb-4">Datos PYM (Prevención y Promoción)</h6>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="rounded border-stone-300"
+                        checked={formData.integrantes[index]?.datos_pyp?.cumple_esquema_pym || false}
+                        onChange={(e: any) => updateIntegranteNested(index, 'datos_pyp', 'cumple_esquema_pym', e.target.checked)}
+                      />
+                      Cumple esquema PYM
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="rounded border-stone-300"
+                        checked={formData.integrantes[index]?.datos_pyp?.odont_pym || false}
+                        onChange={(e: any) => updateIntegranteNested(index, 'datos_pyp', 'odont_pym', e.target.checked)}
+                      />
+                      Odontología PYM
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="rounded border-stone-300"
+                        checked={formData.integrantes[index]?.datos_pyp?.lactancia || false}
+                        onChange={(e: any) => updateIntegranteNested(index, 'datos_pyp', 'lactancia', e.target.checked)}
+                      />
+                      Lactancia
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="rounded border-stone-300"
+                        checked={formData.integrantes[index]?.datos_pyp?.fluor || false}
+                        onChange={(e: any) => updateIntegranteNested(index, 'datos_pyp', 'fluor', e.target.checked)}
+                      />
+                      Flúor
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="rounded border-stone-300"
+                        checked={formData.integrantes[index]?.datos_pyp?.profilaxis || false}
+                        onChange={(e: any) => updateIntegranteNested(index, 'datos_pyp', 'profilaxis', e.target.checked)}
+                      />
+                      Profilaxis
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="rounded border-stone-300"
+                        checked={formData.integrantes[index]?.datos_pyp?.vacunacion || false}
+                        onChange={(e: any) => updateIntegranteNested(index, 'datos_pyp', 'vacunacion', e.target.checked)}
+                      />
+                      Vacunación
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="rounded border-stone-300"
+                        checked={formData.integrantes[index]?.datos_pyp?.micronutientes || false}
+                        onChange={(e: any) => updateIntegranteNested(index, 'datos_pyp', 'micronutientes', e.target.checked)}
+                      />
+                      Micronutrientes
+                    </label>
+                    <ResponsiveField label="Suplementación">
+                      <div className="grid grid-cols-2 gap-2">
+                        {['Hierro', 'Ácido Fólico', 'Calcio', 'Vitamina D', 'Otro'].map((sup) => (
+                          <label key={sup} className="flex items-center gap-2 text-xs">
+                            <input
+                              type="checkbox"
+                              className="rounded border-stone-300"
+                              checked={formData.integrantes[index]?.datos_pyp?.suplementacion?.includes(sup) || false}
+                              onChange={(e: any) => {
+                                const current = formData.integrantes[index]?.datos_pyp?.suplementacion || [];
+                                const newSuplementacion = e.target.checked
+                                  ? [...current, sup]
+                                  : current.filter((item: string) => item !== sup);
+                                updateIntegranteNested(index, 'datos_pyp', 'suplementacion', newSuplementacion);
+                              }}
+                            />
+                            {sup}
+                          </label>
+                        ))}
+                      </div>
+                    </ResponsiveField>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="rounded border-stone-300"
+                        checked={formData.integrantes[index]?.datos_pyp?.desparasitacion || false}
+                        onChange={(e: any) => updateIntegranteNested(index, 'datos_pyp', 'desparasitacion', e.target.checked)}
+                      />
+                      Desparasitación
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="rounded border-stone-300"
+                        checked={formData.integrantes[index]?.datos_pyp?.anemia_hemog || false}
+                        onChange={(e: any) => updateIntegranteNested(index, 'datos_pyp', 'anemia_hemog', e.target.checked)}
+                      />
+                      Anemia/Hemoglobina
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="rounded border-stone-300"
+                        checked={formData.integrantes[index]?.datos_pyp?.its || false}
+                        onChange={(e: any) => updateIntegranteNested(index, 'datos_pyp', 'its', e.target.checked)}
+                      />
+                      ITS
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="rounded border-stone-300"
+                        checked={formData.integrantes[index]?.datos_pyp?.t_ca_cuello || false}
+                        onChange={(e: any) => updateIntegranteNested(index, 'datos_pyp', 't_ca_cuello', e.target.checked)}
+                      />
+                      Tamizaje CA Cuello
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="rounded border-stone-300"
+                        checked={formData.integrantes[index]?.datos_pyp?.t_ca_mama || false}
+                        onChange={(e: any) => updateIntegranteNested(index, 'datos_pyp', 't_ca_mama', e.target.checked)}
+                      />
+                      Tamizaje CA Mama
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="rounded border-stone-300"
+                        checked={formData.integrantes[index]?.datos_pyp?.t_ca_prostata || false}
+                        onChange={(e: any) => updateIntegranteNested(index, 'datos_pyp', 't_ca_prostata', e.target.checked)}
+                      />
+                      Tamizaje CA Próstata
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="rounded border-stone-300"
+                        checked={formData.integrantes[index]?.datos_pyp?.t_ca_colon || false}
+                        onChange={(e: any) => updateIntegranteNested(index, 'datos_pyp', 't_ca_colon', e.target.checked)}
+                      />
+                      Tamizaje CA Colon
+                    </label>
+                    <ResponsiveField label="Preconcepcional">
+                      <div className="grid grid-cols-2 gap-2">
+                        {['Ácido Fólico', 'Vacunación', 'Control Prenatal', 'Otro'].map((prec) => (
+                          <label key={prec} className="flex items-center gap-2 text-xs">
+                            <input
+                              type="checkbox"
+                              className="rounded border-stone-300"
+                              checked={formData.integrantes[index]?.datos_pyp?.preconcepcional?.includes(prec) || false}
+                              onChange={(e: any) => {
+                                const current = formData.integrantes[index]?.datos_pyp?.preconcepcional || [];
+                                const newPreconcepcional = e.target.checked
+                                  ? [...current, prec]
+                                  : current.filter((item: string) => item !== prec);
+                                updateIntegranteNested(index, 'datos_pyp', 'preconcepcional', newPreconcepcional);
+                              }}
+                            />
+                            {prec}
+                          </label>
+                        ))}
+                      </div>
+                    </ResponsiveField>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="rounded border-stone-300"
+                        checked={formData.integrantes[index]?.datos_pyp?.prenatal || false}
+                        onChange={(e: any) => updateIntegranteNested(index, 'datos_pyp', 'prenatal', e.target.checked)}
+                      />
+                      Prenatal
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="rounded border-stone-300"
+                        checked={formData.integrantes[index]?.datos_pyp?.curso_preparacion || false}
+                        onChange={(e: any) => updateIntegranteNested(index, 'datos_pyp', 'curso_preparacion', e.target.checked)}
+                      />
+                      Curso de Preparación
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="rounded border-stone-300"
+                        checked={formData.integrantes[index]?.datos_pyp?.ive || false}
+                        onChange={(e: any) => updateIntegranteNested(index, 'datos_pyp', 'ive', e.target.checked)}
+                      />
+                      IVE
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="rounded border-stone-300"
+                        checked={formData.integrantes[index]?.datos_pyp?.puerperio || false}
+                        onChange={(e: any) => updateIntegranteNested(index, 'datos_pyp', 'puerperio', e.target.checked)}
+                      />
+                      Puerperio
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="rounded border-stone-300"
+                        checked={formData.integrantes[index]?.datos_pyp?.recien_nacido || false}
+                        onChange={(e: any) => updateIntegranteNested(index, 'datos_pyp', 'recien_nacido', e.target.checked)}
+                      />
+                      Recién Nacido
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="rounded border-stone-300"
+                        checked={formData.integrantes[index]?.datos_pyp?.preparacion || false}
+                        onChange={(e: any) => updateIntegranteNested(index, 'datos_pyp', 'preparacion', e.target.checked)}
+                      />
+                      Preparación
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="rounded border-stone-300"
+                        checked={formData.integrantes[index]?.datos_pyp?.educacion || false}
+                        onChange={(e: any) => updateIntegranteNested(index, 'datos_pyp', 'educacion', e.target.checked)}
+                      />
+                      Educación
+                    </label>
+                    <ResponsiveField label="Motivo No Atención PYM">
+                      <div className="grid grid-cols-2 gap-2">
+                        {['Lugar lejano', 'Horario', 'Tiempos', 'Falta de información', 'No aplica', 'Otro'].map((motivo) => (
+                          <label key={motivo} className="flex items-center gap-2 text-xs">
+                            <input
+                              type="checkbox"
+                              className="rounded border-stone-300"
+                              checked={formData.integrantes[index]?.datos_pyp?.motivo_no_atencion_pym?.includes(motivo) || false}
+                              onChange={(e: any) => {
+                                const current = formData.integrantes[index]?.datos_pyp?.motivo_no_atencion_pym || [];
+                                const newMotivos = e.target.checked
+                                  ? [...current, motivo]
+                                  : current.filter((item: string) => item !== motivo);
+                                updateIntegranteNested(index, 'datos_pyp', 'motivo_no_atencion_pym', newMotivos);
+                              }}
+                            />
+                            {motivo}
+                          </label>
+                        ))}
+                      </div>
+                    </ResponsiveField>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="rounded border-stone-300"
+                        checked={formData.integrantes[index]?.datos_pyp?.si_es_menor_6_meses_lactancia || false}
+                        onChange={(e: any) => updateIntegranteNested(index, 'datos_pyp', 'si_es_menor_6_meses_lactancia', e.target.checked)}
+                      />
+                      Si es menor 6 meses: Lactancia
+                    </label>
+                    <ResponsiveField label="Si es menor 2 años: Meses de lactancia">
+                      <ResponsiveInput
+                        type="number"
+                        value={formData.integrantes[index]?.datos_pyp?.si_es_menor_2_anos_meses_lact || ''}
+                        onChange={(e: any) => updateIntegranteNested(index, 'datos_pyp', 'si_es_menor_2_anos_meses_lact', e.target.value ? Number(e.target.value) : null)}
+                        placeholder="Meses"
+                      />
+                    </ResponsiveField>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="rounded border-stone-300"
+                        checked={formData.integrantes[index]?.datos_pyp?.menor_de_5_anos || false}
+                        onChange={(e: any) => updateIntegranteNested(index, 'datos_pyp', 'menor_de_5_anos', e.target.checked)}
+                      />
+                      Menor de 5 años
+                    </label>
+                  </div>
+                </div>
+
+                {/* Sección: Datos de Salud */}
+                <div className="mt-6 pt-6 border-t border-stone-200">
+                  <h6 className="font-semibold text-stone-900 mb-4">Datos de Salud</h6>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <ResponsiveField label="Peso (kg)">
+                      <ResponsiveInput
+                        type="number"
+                        step="0.1"
+                        value={formData.integrantes[index]?.datos_salud?.peso || ''}
+                        onChange={(e: any) => updateIntegranteNested(index, 'datos_salud', 'peso', e.target.value ? Number(e.target.value) : null)}
+                        placeholder="Peso en kilogramos"
+                      />
+                    </ResponsiveField>
+                    <ResponsiveField label="Talla (cm)">
+                      <ResponsiveInput
+                        type="number"
+                        step="0.1"
+                        value={formData.integrantes[index]?.datos_salud?.talla || ''}
+                        onChange={(e: any) => updateIntegranteNested(index, 'datos_salud', 'talla', e.target.value ? Number(e.target.value) : null)}
+                        placeholder="Talla en centímetros"
+                      />
+                    </ResponsiveField>
+                    <ResponsiveField label="Diagnóstico Nutricional">
+                      <ResponsiveInput
+                        value={formData.integrantes[index]?.datos_salud?.diagnostico || ''}
+                        onChange={(e: any) => updateIntegranteNested(index, 'datos_salud', 'diagnostico', e.target.value)}
+                        placeholder="Ej: Normal, Desnutrición, Sobrepeso"
+                      />
+                    </ResponsiveField>
+                    <ResponsiveField label="Signos de Desnutrición Aguda">
+                      <div className="grid grid-cols-2 gap-2">
+                        {['Edema', 'Emaciación', 'Retraso crecimiento', 'Pérdida peso', 'Otro'].map((signo) => (
+                          <label key={signo} className="flex items-center gap-2 text-xs">
+                            <input
+                              type="checkbox"
+                              className="rounded border-stone-300"
+                              checked={formData.integrantes[index]?.datos_salud?.signos_desnutricion_aguda?.includes(signo) || false}
+                              onChange={(e: any) => {
+                                const current = formData.integrantes[index]?.datos_salud?.signos_desnutricion_aguda || [];
+                                const newSignos = e.target.checked
+                                  ? [...current, signo]
+                                  : current.filter((item: string) => item !== signo);
+                                updateIntegranteNested(index, 'datos_salud', 'signos_desnutricion_aguda', newSignos);
+                              }}
+                            />
+                            {signo}
+                          </label>
+                        ))}
+                      </div>
+                    </ResponsiveField>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="rounded border-stone-300"
+                        checked={formData.integrantes[index]?.datos_salud?.enf_ultimo_mes || false}
+                        onChange={(e: any) => updateIntegranteNested(index, 'datos_salud', 'enf_ultimo_mes', e.target.checked)}
+                      />
+                      Enfermedad último mes
+                    </label>
+                    <ResponsiveField label="Cuáles enfermedades último mes">
+                      <ResponsiveInput
+                        value={formData.integrantes[index]?.datos_salud?.cuales_enf_ultimo_mes || ''}
+                        onChange={(e: any) => updateIntegranteNested(index, 'datos_salud', 'cuales_enf_ultimo_mes', e.target.value)}
+                        placeholder="Especificar enfermedades"
+                      />
+                    </ResponsiveField>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="rounded border-stone-300"
+                        checked={formData.integrantes[index]?.datos_salud?.tto || false}
+                        onChange={(e: any) => updateIntegranteNested(index, 'datos_salud', 'tto', e.target.checked)}
+                      />
+                      TTO (Tratamiento)
+                    </label>
+                    <ResponsiveField label="Tiempo Cuidador">
+                      <ResponsiveSelect
+                        value={formData.integrantes[index]?.datos_salud?.tiempo_cuidador || formData.integrantes[index]?.tiempo_cuidador || ''}
+                        onChange={(e: any) => {
+                          const value = e.target.value;
+                          updateIntegranteNested(index, 'datos_salud', 'tiempo_cuidador', value);
+                          updateIntegrante(index, 'tiempo_cuidador', value);
+                        }}
+                        options={[
+                          { value: '', label: 'Seleccionar...' },
+                          { value: 'Tto. Casero', label: 'Tto. Casero' },
+                          { value: 'Rechazo', label: 'Rechazo' },
+                          { value: 'No afiliado', label: 'No afiliado' },
+                          { value: 'Pract. Anc', label: 'Pract. Anc' },
+                          { value: 'Partera', label: 'Partera' },
+                          { value: 'Sabedor', label: 'Sabedor' },
+                          { value: 'No aplica', label: 'No aplica' }
+                        ]}
+                      />
+                    </ResponsiveField>
+                    <ResponsiveField label="Motivo No Atención">
+                      <div className="grid grid-cols-2 gap-2">
+                        {['Lugar lejano', 'Horario', 'Tiempos', 'Falta de información', 'Costo', 'No aplica', 'Otro'].map((motivo) => (
+                          <label key={motivo} className="flex items-center gap-2 text-xs">
+                            <input
+                              type="checkbox"
+                              className="rounded border-stone-300"
+                              checked={formData.integrantes[index]?.datos_salud?.motivo_no_atencion?.includes(motivo) || false}
+                              onChange={(e: any) => {
+                                const current = formData.integrantes[index]?.datos_salud?.motivo_no_atencion || [];
+                                const newMotivos = e.target.checked
+                                  ? [...current, motivo]
+                                  : current.filter((item: string) => item !== motivo);
+                                updateIntegranteNested(index, 'datos_salud', 'motivo_no_atencion', newMotivos);
+                              }}
+                            />
+                            {motivo}
+                          </label>
+                        ))}
+                      </div>
+                    </ResponsiveField>
+                  </div>
                 </div>
               </ResponsiveCard>
             ))}
@@ -3576,8 +5355,17 @@ function PlanCuidadoView({ paciente, familia, onBack }: any) {
     cuidados_salud: '',
     demandas_inducidas_desc: '',
     educacion_salud: '',
+    relaciones_salud_mental: '',
     estado: 'Activo',
-    fecha_aceptacion: ''
+    fecha_aceptacion: '',
+    numero_ficha_relacionada: '',
+    nombre_encuestado_principal: '',
+    territorio: '',
+    micro_territorio: '',
+    direccion: '',
+    telefono: '',
+    profesional_entrega: '',
+    ebs_numero: ''
   });
 
   const loadPlanes = async () => {
@@ -3716,9 +5504,73 @@ function PlanCuidadoView({ paciente, familia, onBack }: any) {
       {/* Formulario de nuevo plan */}
       {showForm && (
         <ResponsiveCard>
-          <h4 className="font-semibold text-stone-900 mb-4">Nuevo Plan de Cuidado</h4>
+          <h4 className="font-semibold text-stone-900 mb-4">Nuevo Plan de Cuidado Familiar</h4>
           
           <div className="space-y-4">
+            {/* Información General de la Familia */}
+            <div className="border-b border-stone-200 pb-4">
+              <h5 className="font-medium text-stone-900 mb-3">Información General</h5>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <ResponsiveField label="Número de Ficha Relacionada">
+                  <ResponsiveInput
+                    value={form.numero_ficha_relacionada}
+                    onChange={(e: any) => setForm(prev => ({ ...prev, numero_ficha_relacionada: e.target.value }))}
+                    placeholder="Ej: 14250"
+                  />
+                </ResponsiveField>
+                <ResponsiveField label="Nombre del Encuestado Principal">
+                  <ResponsiveInput
+                    value={form.nombre_encuestado_principal}
+                    onChange={(e: any) => setForm(prev => ({ ...prev, nombre_encuestado_principal: e.target.value }))}
+                    placeholder="Nombre completo del encuestado"
+                  />
+                </ResponsiveField>
+                <ResponsiveField label="Territorio">
+                  <ResponsiveInput
+                    value={form.territorio || familia.territorio || ''}
+                    onChange={(e: any) => setForm(prev => ({ ...prev, territorio: e.target.value }))}
+                    placeholder="Ej: Comuna 19"
+                  />
+                </ResponsiveField>
+                <ResponsiveField label="Micro Territorio">
+                  <ResponsiveInput
+                    value={form.micro_territorio || familia.micro_territorio || ''}
+                    onChange={(e: any) => setForm(prev => ({ ...prev, micro_territorio: e.target.value }))}
+                    placeholder="Micro territorio"
+                  />
+                </ResponsiveField>
+                <ResponsiveField label="Dirección">
+                  <ResponsiveInput
+                    value={form.direccion || familia.direccion || ''}
+                    onChange={(e: any) => setForm(prev => ({ ...prev, direccion: e.target.value }))}
+                    placeholder="Dirección completa"
+                  />
+                </ResponsiveField>
+                <ResponsiveField label="Teléfono">
+                  <ResponsiveInput
+                    value={form.telefono || familia.telefono_contacto || ''}
+                    onChange={(e: any) => setForm(prev => ({ ...prev, telefono: e.target.value }))}
+                    placeholder="Número de teléfono"
+                  />
+                </ResponsiveField>
+                <ResponsiveField label="Profesional que Realiza la Entrega del Plan">
+                  <ResponsiveInput
+                    value={form.profesional_entrega || (user as any)?.nombre_completo || ''}
+                    onChange={(e: any) => setForm((prev: any) => ({ ...prev, profesional_entrega: e.target.value }))}
+                    placeholder="Nombre del profesional"
+                  />
+                </ResponsiveField>
+                <ResponsiveField label="EBS Número">
+                  <ResponsiveInput
+                    value={form.ebs_numero}
+                    onChange={(e: any) => setForm(prev => ({ ...prev, ebs_numero: e.target.value }))}
+                    placeholder="Número EBS"
+                  />
+                </ResponsiveField>
+              </div>
+            </div>
+
+            {/* Fechas */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <ResponsiveField label="Fecha de Entrega" required>
                 <ResponsiveInput
@@ -3736,53 +5588,56 @@ function PlanCuidadoView({ paciente, familia, onBack }: any) {
               </ResponsiveField>
             </div>
 
-            <ResponsiveField label="Condición/Situación Identificada" required>
-              <textarea
-                className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none"
-                rows={3}
-                value={form.condicion_identificada}
-                onChange={(e: any) => setForm(prev => ({ ...prev, condicion_identificada: e.target.value }))}
-                placeholder="Describe la condición o situación identificada..."
-              />
-            </ResponsiveField>
+            {/* Condición/Situación Identificada - Reorganizada según formulario físico */}
+            <div className="border-t border-stone-200 pt-4">
+              <h5 className="font-medium text-stone-900 mb-3">Condición/Situación Identificada</h5>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <ResponsiveField label="Relaciones y salud mental">
+                  <textarea
+                    className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none"
+                    rows={3}
+                    value={form.relaciones_salud_mental}
+                    onChange={(e: any) => setForm(prev => ({ ...prev, relaciones_salud_mental: e.target.value }))}
+                    placeholder="Relaciones y salud mental..."
+                  />
+                </ResponsiveField>
+                <ResponsiveField label="Cuidados de la salud">
+                  <textarea
+                    className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none"
+                    rows={3}
+                    value={form.cuidados_salud}
+                    onChange={(e: any) => setForm(prev => ({ ...prev, cuidados_salud: e.target.value }))}
+                    placeholder="Cuidados de la salud..."
+                  />
+                </ResponsiveField>
+                <ResponsiveField label="Demandas inducidas">
+                  <textarea
+                    className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none"
+                    rows={3}
+                    value={form.demandas_inducidas_desc}
+                    onChange={(e: any) => setForm(prev => ({ ...prev, demandas_inducidas_desc: e.target.value }))}
+                    placeholder="Demandas inducidas..."
+                  />
+                </ResponsiveField>
+                <ResponsiveField label="Educación en salud">
+                  <textarea
+                    className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none"
+                    rows={3}
+                    value={form.educacion_salud}
+                    onChange={(e: any) => setForm(prev => ({ ...prev, educacion_salud: e.target.value }))}
+                    placeholder="Educación en salud..."
+                  />
+                </ResponsiveField>
+              </div>
+            </div>
 
             <ResponsiveField label="Logro en salud a establecerse" required>
               <textarea
                 className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none"
-                rows={3}
+                rows={4}
                 value={form.logro_salud}
                 onChange={(e: any) => setForm(prev => ({ ...prev, logro_salud: e.target.value }))}
                 placeholder="Describe el logro en salud que se quiere establecer..."
-              />
-            </ResponsiveField>
-
-            <ResponsiveField label="Cuidados de la salud">
-              <textarea
-                className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none"
-                rows={3}
-                value={form.cuidados_salud}
-                onChange={(e: any) => setForm(prev => ({ ...prev, cuidados_salud: e.target.value }))}
-                placeholder="Describe los cuidados de salud necesarios..."
-              />
-            </ResponsiveField>
-
-            <ResponsiveField label="Demandas inducidas">
-              <textarea
-                className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none"
-                rows={2}
-                value={form.demandas_inducidas_desc}
-                onChange={(e: any) => setForm(prev => ({ ...prev, demandas_inducidas_desc: e.target.value }))}
-                placeholder="Describe las demandas inducidas..."
-              />
-            </ResponsiveField>
-
-            <ResponsiveField label="Educación en salud">
-              <textarea
-                className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none"
-                rows={2}
-                value={form.educacion_salud}
-                onChange={(e: any) => setForm(prev => ({ ...prev, educacion_salud: e.target.value }))}
-                placeholder="Describe la educación en salud necesaria..."
               />
             </ResponsiveField>
 
@@ -3859,6 +5714,19 @@ function DemandasInducidasView({ paciente, familia, onBack }: any) {
     { id: 'Odontólogo', nombre: 'Odontólogo' }
   ];
   
+  // Calcular edad del paciente
+  const calcularEdad = (fechaNacimiento: string) => {
+    if (!fechaNacimiento) return null;
+    const hoy = new Date();
+    const nacimiento = new Date(fechaNacimiento);
+    let edad = hoy.getFullYear() - nacimiento.getFullYear();
+    const mes = hoy.getMonth() - nacimiento.getMonth();
+    if (mes < 0 || (mes === 0 && hoy.getDate() < nacimiento.getDate())) {
+      edad--;
+    }
+    return edad;
+  };
+
   const [form, setForm] = useState<any>({
     numero_formulario: '',
     fecha_demanda: new Date().toISOString().split('T')[0],
@@ -3869,7 +5737,32 @@ function DemandasInducidasView({ paciente, familia, onBack }: any) {
     },
     estado: 'Pendiente',
     asignado_a_uid: null,
-    seguimiento: {}
+    seguimiento: {
+      fecha_seguimiento: '',
+      observaciones: '',
+      resultado: '',
+      proxima_cita: '',
+      medio: '',
+      verificado: null
+    },
+    edad: paciente.fecha_nacimiento ? calcularEdad(paciente.fecha_nacimiento) : null,
+    sexo: paciente.genero || '',
+    eps: paciente.eps || '',
+    regimen: paciente.regimen_afiliacion || '',
+    ips_atencion: '',
+    ebs_numero: '',
+    educacion_salud: '',
+    intervencion_efectiva: '',
+    tipo_identificacion: paciente.tipo_documento || '',
+    numero_identificacion: paciente.numero_documento || '',
+    telefono: paciente.telefono || familia.telefono_contacto || '',
+    direccion: familia.direccion || '',
+    nombres_completos: `${paciente.primer_nombre || ''} ${paciente.segundo_nombre || ''} ${paciente.primer_apellido || ''} ${paciente.segundo_apellido || ''}`.trim(),
+    intervencion_efectiva_si: false,
+    seguimiento_verificado: false,
+    seguimiento_fecha: '',
+    seguimiento_medio: '',
+    seguimiento_observaciones: ''
   });
 
   const loadDemandas = async () => {
@@ -3942,7 +5835,32 @@ function DemandasInducidasView({ paciente, familia, onBack }: any) {
         },
         estado: 'Pendiente',
         asignado_a_uid: null,
-        seguimiento: {}
+        seguimiento: {
+          fecha_seguimiento: '',
+          observaciones: '',
+          resultado: '',
+          proxima_cita: '',
+          medio: '',
+          verificado: null
+        },
+        edad: paciente.fecha_nacimiento ? calcularEdad(paciente.fecha_nacimiento) : null,
+        sexo: paciente.genero || '',
+        eps: paciente.eps || '',
+        regimen: paciente.regimen_afiliacion || '',
+        ips_atencion: '',
+        ebs_numero: '',
+        educacion_salud: '',
+        intervencion_efectiva: '',
+        tipo_identificacion: paciente.tipo_documento || '',
+        numero_identificacion: paciente.numero_documento || '',
+        telefono: paciente.telefono || familia.telefono_contacto || '',
+        direccion: familia.direccion || '',
+        nombres_completos: `${paciente.primer_nombre || ''} ${paciente.segundo_nombre || ''} ${paciente.primer_apellido || ''} ${paciente.segundo_apellido || ''}`.trim(),
+        intervencion_efectiva_si: false,
+        seguimiento_verificado: false,
+        seguimiento_fecha: '',
+        seguimiento_medio: '',
+        seguimiento_observaciones: ''
       });
       setTiposProfesionalesSeleccionados([]);
       setProfesionalesDisponibles({});
@@ -4013,7 +5931,20 @@ function DemandasInducidasView({ paciente, familia, onBack }: any) {
       },
       estado: 'Pendiente',
       asignado_a_uid: null,
-      seguimiento: {}
+      seguimiento: {
+        fecha_seguimiento: '',
+        observaciones: '',
+        resultado: '',
+        proxima_cita: ''
+      },
+      edad: paciente.fecha_nacimiento ? calcularEdad(paciente.fecha_nacimiento) : null,
+      sexo: paciente.genero || '',
+      eps: paciente.eps || '',
+      regimen: paciente.regimen_afiliacion || '',
+      ips_atencion: '',
+      ebs_numero: '',
+      educacion_salud: '',
+      intervencion_efectiva: ''
     });
     setTiposProfesionalesSeleccionados([]);
     setProfesionalesDisponibles({});
@@ -4058,43 +5989,211 @@ function DemandasInducidasView({ paciente, familia, onBack }: any) {
           <h4 className="font-semibold text-stone-900 mb-4">Nueva Demanda Inducida</h4>
           
           <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <ResponsiveField label="Número de Formulario">
-                <ResponsiveInput
-                  type="text"
-                  name="numero_formulario"
-                  value={form.numero_formulario}
-                  onChange={handleFormChange}
-                  placeholder="Ej: 29251"
-                />
-              </ResponsiveField>
-              <ResponsiveField label="Fecha de Demanda">
-                <ResponsiveInput
-                  type="date"
-                  name="fecha_demanda"
-                  value={form.fecha_demanda}
-                  onChange={handleFormChange}
-                />
-              </ResponsiveField>
-              <ResponsiveField label="Estado">
-                <select
-                  name="estado"
-                  value={form.estado}
-                  onChange={handleFormChange}
-                  className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm"
-                >
-                  <option value="Pendiente">Pendiente</option>
-                  <option value="Asignada">Asignada</option>
-                  <option value="Realizada">Realizada</option>
-                  <option value="Cancelada">Cancelada</option>
-                </select>
-              </ResponsiveField>
+            {/* Información del Paciente */}
+            <div className="border-b border-stone-200 pb-4">
+              <h5 className="font-medium text-stone-900 mb-3">Información del Paciente</h5>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <ResponsiveField label="Número de Formulario">
+                  <ResponsiveInput
+                    type="text"
+                    name="numero_formulario"
+                    value={form.numero_formulario}
+                    onChange={handleFormChange}
+                    placeholder="Ej: 29251"
+                  />
+                </ResponsiveField>
+                <ResponsiveField label="Fecha de Demanda">
+                  <ResponsiveInput
+                    type="date"
+                    name="fecha_demanda"
+                    value={form.fecha_demanda}
+                    onChange={handleFormChange}
+                  />
+                </ResponsiveField>
+                <ResponsiveField label="Tipo de Identificación">
+                  <select
+                    name="tipo_identificacion"
+                    value={form.tipo_identificacion}
+                    onChange={handleFormChange}
+                    className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm"
+                  >
+                    <option value="">Seleccionar...</option>
+                    <option value="CC">CC - Cédula de Ciudadanía</option>
+                    <option value="TI">TI - Tarjeta de Identidad</option>
+                    <option value="CE">CE - Cédula de Extranjería</option>
+                    <option value="RC">RC - Registro Civil</option>
+                    <option value="PA">PA - Pasaporte</option>
+                  </select>
+                </ResponsiveField>
+                <ResponsiveField label="Número de Identificación">
+                  <ResponsiveInput
+                    type="text"
+                    name="numero_identificacion"
+                    value={form.numero_identificacion}
+                    onChange={handleFormChange}
+                    placeholder="Número de documento"
+                  />
+                </ResponsiveField>
+                <ResponsiveField label="Nombres y Apellidos">
+                  <ResponsiveInput
+                    type="text"
+                    name="nombres_completos"
+                    value={form.nombres_completos}
+                    onChange={handleFormChange}
+                    placeholder="Nombres y apellidos completos"
+                  />
+                </ResponsiveField>
+                <ResponsiveField label="Teléfono">
+                  <ResponsiveInput
+                    type="text"
+                    name="telefono"
+                    value={form.telefono}
+                    onChange={handleFormChange}
+                    placeholder="Número de teléfono"
+                  />
+                </ResponsiveField>
+                <ResponsiveField label="Dirección">
+                  <ResponsiveInput
+                    type="text"
+                    name="direccion"
+                    value={form.direccion}
+                    onChange={handleFormChange}
+                    placeholder="Dirección completa"
+                  />
+                </ResponsiveField>
+                <ResponsiveField label="Edad">
+                  <ResponsiveInput
+                    type="number"
+                    name="edad"
+                    value={form.edad || ''}
+                    onChange={handleFormChange}
+                    placeholder="Edad en años"
+                    disabled={!!paciente.fecha_nacimiento}
+                  />
+                </ResponsiveField>
+                <ResponsiveField label="Sexo">
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="radio"
+                        name="sexo"
+                        value="Masculino"
+                        checked={form.sexo === 'Masculino'}
+                        onChange={handleFormChange}
+                        className="rounded border-stone-300"
+                      />
+                      H (Hombre)
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="radio"
+                        name="sexo"
+                        value="Femenino"
+                        checked={form.sexo === 'Femenino'}
+                        onChange={handleFormChange}
+                        className="rounded border-stone-300"
+                      />
+                      M (Mujer)
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="radio"
+                        name="sexo"
+                        value="Transgénero"
+                        checked={form.sexo === 'Transgénero'}
+                        onChange={handleFormChange}
+                        className="rounded border-stone-300"
+                      />
+                      T (Transgénero)
+                    </label>
+                  </div>
+                </ResponsiveField>
+                <ResponsiveField label="EPS">
+                  <ResponsiveInput
+                    type="text"
+                    name="eps"
+                    value={form.eps}
+                    onChange={handleFormChange}
+                    placeholder="Nombre de la EPS"
+                  />
+                </ResponsiveField>
+                <ResponsiveField label="Régimen">
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="radio"
+                        name="regimen"
+                        value="Subsidiado"
+                        checked={form.regimen === 'Subsidiado'}
+                        onChange={handleFormChange}
+                        className="rounded border-stone-300"
+                      />
+                      S (Subsidiado)
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="radio"
+                        name="regimen"
+                        value="Contributivo"
+                        checked={form.regimen === 'Contributivo'}
+                        onChange={handleFormChange}
+                        className="rounded border-stone-300"
+                      />
+                      C (Contributivo)
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="radio"
+                        name="regimen"
+                        value="Especial"
+                        checked={form.regimen === 'Especial'}
+                        onChange={handleFormChange}
+                        className="rounded border-stone-300"
+                      />
+                      E (Especial)
+                    </label>
+                  </div>
+                </ResponsiveField>
+                <ResponsiveField label="IPS de Atención">
+                  <ResponsiveInput
+                    type="text"
+                    name="ips_atencion"
+                    value={form.ips_atencion}
+                    onChange={handleFormChange}
+                    placeholder="IPS donde se atiende"
+                  />
+                </ResponsiveField>
+                <ResponsiveField label="EBS Número">
+                  <ResponsiveInput
+                    type="text"
+                    name="ebs_numero"
+                    value={form.ebs_numero}
+                    onChange={handleFormChange}
+                    placeholder="Número EBS"
+                  />
+                </ResponsiveField>
+                <ResponsiveField label="Estado">
+                  <select
+                    name="estado"
+                    value={form.estado}
+                    onChange={handleFormChange}
+                    className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm"
+                  >
+                    <option value="Pendiente">Pendiente</option>
+                    <option value="Asignada">Asignada</option>
+                    <option value="Realizada">Realizada</option>
+                    <option value="Cancelada">Cancelada</option>
+                  </select>
+                </ResponsiveField>
+              </div>
             </div>
 
+            {/* Diligenciamiento - Expandido con todas las opciones del formato físico */}
             <div>
-              <label className="text-sm font-medium text-stone-700 mb-2 block">Diligenciamiento</label>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              <label className="text-sm font-medium text-stone-700 mb-2 block">Funcionario que Diligencia</label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
                 {[
+                  // Mantener las opciones existentes
                   'Atención para el cuidado preconcepcional',
                   'Planificación familiar',
                   'Control prenatal',
@@ -4104,7 +6203,58 @@ function DemandasInducidasView({ paciente, familia, onBack }: any) {
                   'Nutrición infantil',
                   'Salud oral',
                   'Salud mental',
-                  'Enfermedades crónicas'
+                  'Enfermedades crónicas',
+                  'Promoción de la salud',
+                  'Prevención de enfermedades',
+                  'Atención de enfermedades agudas',
+                  'Atención de enfermedades crónicas',
+                  'Rehabilitación',
+                  'Atención de urgencias',
+                  'Atención domiciliaria',
+                  'Atención en salud mental',
+                  'Atención en salud sexual y reproductiva',
+                  'Atención al adulto mayor',
+                  'Atención a gestantes',
+                  'Atención a niños y niñas',
+                  'Atención a adolescentes',
+                  // Agregar opciones del formato físico
+                  'Atención por planificación familiar y anticoncepción',
+                  'Tamizaje para ITS (según exposición al riesgo, relaciones sexuales sin protección)',
+                  'Curso de preparación para la maternidad y paternidad',
+                  'Interrupción voluntaria del embarazo (IVE)',
+                  'Atención para el cuidado prenatal - Controles prenatales',
+                  'Gestantes suplementación con micronutrientes',
+                  'Atención del puerperio',
+                  'Atención para el seguimiento del recién nacido',
+                  'Potenciales evocados auditivos',
+                  'Potenciales visuales (valoración oftalmología)',
+                  'Promoción y apoyo a lactancia materna',
+                  'Ruta de atención primera infancia (1 mes - 5 años)',
+                  'Fortificación casera con micronutrientes en polvo (6-8M, 12-18M, 18-24M)',
+                  'Suplementación con micronutrientes (2 - 5 años semestral)',
+                  'Desparasitación (A partir del año, semestral)',
+                  'Tamizaje visual (3 - 5 años anual)',
+                  'Ruta de atención infancia (6 - 11 años)',
+                  'Ruta de atención adolescencia (12 - 17 años)',
+                  'Tamizaje para anemia - Hemoglobina y hematocrito mujeres (1 vez entre 10 y 13 años y 1 vez entre 14 y 17 años)',
+                  'Ruta de atención juventud (18 - 28 años)',
+                  'Tamizaje de riesgo cardiovascular (18 - 28 años anual)',
+                  'Ruta de atención adultez (29 - 59 años)',
+                  'Ruta de atención vejez (>60 años)',
+                  'Tamizaje de riesgo cardiovascular (>29 años 1 vez cada 5 años)',
+                  'Tamizaje para cáncer de cuello uterino (mujeres) - Citología cervicouterina (25-29 años 1-3-3)',
+                  'Tamizaje para cáncer de cuello uterino (mujeres) - ADN-VPH (30-65 años 1-5-5)',
+                  'Tamizaje para cáncer de cuello uterino (mujeres) - Inspección visual ácido acético y lugol (30-50 años en zonas rurales dispersas)',
+                  'Tamizaje para cáncer de mama (mujeres) - Valoración clínica de la mama (>40 - 69 años - anual)',
+                  'Tamizaje para cáncer de mama (mujeres) - Mamografía bilateral (50 a 69 años cada 2 años)',
+                  'Tamizaje para cáncer de colon y recto (hombres y mujeres) - Sangre oculta en materia fecal (>50-75 años cada 2 años)',
+                  'Tamizaje cáncer de próstata (hombres) - Antígeno prostático PSA (>50 años cada 5 años hasta los 75 años)',
+                  'Tamizaje cáncer de próstata (hombres) - Tacto rectal (>50 años cada 5 años hasta los 75 años)',
+                  'Salud Oral - Valoración integral por profesional en odontología (6 meses-17años anual, >18 cada 2 años)',
+                  'Salud Oral - Aplicación flúor (1-17años, semestral)',
+                  'Salud Oral - Profilaxis y remoción de placa (a partir 1-17 años semestral, 18-28 años anual, >29 años cada 2 años)',
+                  'Vacunación de acuerdo con el esquema',
+                  'Otros'
                 ].map((opcion) => (
                   <label key={opcion} className="flex items-center space-x-2 text-sm">
                     <input
@@ -4136,7 +6286,7 @@ function DemandasInducidasView({ paciente, familia, onBack }: any) {
                 Remisión a profesionales del equipo básico
               </label>
               <div className="space-y-3">
-                {/* Checkboxes para seleccionar tipos de profesionales */}
+                {/* Checkboxes para seleccionar tipos de profesionales - Mantener los existentes y agregar los del formato */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
                   {tiposProfesionales.map((tipo) => (
                     <label key={tipo.id} className="flex items-center space-x-2 text-sm">
@@ -4149,6 +6299,25 @@ function DemandasInducidasView({ paciente, familia, onBack }: any) {
                       <span>{tipo.nombre}</span>
                     </label>
                   ))}
+                  {/* Agregar opciones del formato físico que no están en tiposProfesionales */}
+                  <label className="flex items-center space-x-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="rounded border-stone-300"
+                      checked={tiposProfesionalesSeleccionados.includes('Trabajo Social')}
+                      onChange={() => toggleTipoProfesional('Trabajo Social')}
+                    />
+                    <span>Trabajo Social</span>
+                  </label>
+                  <label className="flex items-center space-x-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="rounded border-stone-300"
+                      checked={tiposProfesionalesSeleccionados.includes('Terapia Respiratoria')}
+                      onChange={() => toggleTipoProfesional('Terapia Respiratoria')}
+                    />
+                    <span>Terapia Respiratoria</span>
+                  </label>
                 </div>
                 
                 {/* Desplegables para profesionales según tipo seleccionado */}
@@ -4200,6 +6369,178 @@ function DemandasInducidasView({ paciente, familia, onBack }: any) {
                   handleExamenesChange(examenes);
                 }}
               />
+            </div>
+
+            {/* Educación en Salud */}
+            <ResponsiveField label="Educación en salud. Tema:">
+              <textarea
+                className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none"
+                rows={3}
+                name="educacion_salud"
+                value={form.educacion_salud}
+                onChange={handleFormChange}
+                placeholder="Tema de educación en salud..."
+              />
+            </ResponsiveField>
+
+            {/* Intervención Efectiva */}
+            <div>
+              <label className="text-sm font-medium text-stone-700 mb-2 block">Se realiza intervención efectiva:</label>
+              <div className="flex gap-4 mb-2">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="intervencion_efectiva_si"
+                    checked={form.intervencion_efectiva_si === true}
+                    onChange={(e: any) => setForm((prev: any) => ({ ...prev, intervencion_efectiva_si: true }))}
+                    className="rounded border-stone-300"
+                  />
+                  SI
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="intervencion_efectiva_si"
+                    checked={form.intervencion_efectiva_si === false}
+                    onChange={(e: any) => setForm((prev: any) => ({ ...prev, intervencion_efectiva_si: false }))}
+                    className="rounded border-stone-300"
+                  />
+                  NO
+                </label>
+              </div>
+              {form.intervencion_efectiva_si === true && (
+                <ResponsiveField label="¿Cuál?">
+                  <textarea
+                    className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none"
+                    rows={3}
+                    name="intervencion_efectiva"
+                    value={form.intervencion_efectiva}
+                    onChange={handleFormChange}
+                    placeholder="Especificar la intervención efectiva realizada..."
+                  />
+                </ResponsiveField>
+              )}
+            </div>
+
+            {/* Seguimiento Detallado - USO EXCLUSIVO PARA SEGUIMIENTO */}
+            <div className="border-t border-stone-200 pt-4">
+              <h5 className="font-medium text-stone-900 mb-3">USO EXCLUSIVO PARA SEGUIMIENTO</h5>
+              
+              {/* Mantener campos existentes de seguimiento */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <ResponsiveField label="Fecha de Seguimiento">
+                  <ResponsiveInput
+                    type="date"
+                    value={form.seguimiento?.fecha_seguimiento || form.seguimiento_fecha || ''}
+                    onChange={(e: any) => {
+                      setForm((prev: any) => ({
+                        ...prev,
+                        seguimiento: {
+                          ...prev.seguimiento,
+                          fecha_seguimiento: e.target.value
+                        },
+                        seguimiento_fecha: e.target.value
+                      }));
+                    }}
+                  />
+                </ResponsiveField>
+                <ResponsiveField label="Próxima Cita">
+                  <ResponsiveInput
+                    type="date"
+                    value={form.seguimiento?.proxima_cita || ''}
+                    onChange={(e: any) => setForm((prev: any) => ({
+                      ...prev,
+                      seguimiento: {
+                        ...prev.seguimiento,
+                        proxima_cita: e.target.value
+                      }
+                    }))}
+                  />
+                </ResponsiveField>
+                <ResponsiveField label="Resultado">
+                  <select
+                    value={form.seguimiento?.resultado || ''}
+                    onChange={(e: any) => setForm((prev: any) => ({
+                      ...prev,
+                      seguimiento: {
+                        ...prev.seguimiento,
+                        resultado: e.target.value
+                      }
+                    }))}
+                    className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm"
+                  >
+                    <option value="">Seleccionar...</option>
+                    <option value="Satisfactorio">Satisfactorio</option>
+                    <option value="Parcial">Parcial</option>
+                    <option value="No satisfactorio">No satisfactorio</option>
+                    <option value="Pendiente">Pendiente</option>
+                  </select>
+                </ResponsiveField>
+              </div>
+              
+              {/* Campos nuevos del formato físico */}
+              <div className="border-t border-stone-200 pt-4">
+                <div className="mb-3">
+                  <label className="text-sm font-medium text-stone-700 mb-2 block">Se verifica la atención:</label>
+                  <div className="flex gap-4 mb-3">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="radio"
+                        name="seguimiento_verificado"
+                        checked={form.seguimiento_verificado === true}
+                        onChange={(e: any) => setForm((prev: any) => ({ ...prev, seguimiento_verificado: true }))}
+                        className="rounded border-stone-300"
+                      />
+                      SI
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="radio"
+                        name="seguimiento_verificado"
+                        checked={form.seguimiento_verificado === false}
+                        onChange={(e: any) => setForm((prev: any) => ({ ...prev, seguimiento_verificado: false }))}
+                        className="rounded border-stone-300"
+                      />
+                      NO
+                    </label>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+                  <ResponsiveField label="Fecha">
+                    <ResponsiveInput
+                      type="date"
+                      value={form.seguimiento_fecha || ''}
+                      onChange={(e: any) => setForm((prev: any) => ({ ...prev, seguimiento_fecha: e.target.value }))}
+                    />
+                  </ResponsiveField>
+                  <ResponsiveField label="Medio de seguimiento">
+                    <ResponsiveInput
+                      type="text"
+                      value={form.seguimiento_medio || ''}
+                      onChange={(e: any) => setForm((prev: any) => ({ ...prev, seguimiento_medio: e.target.value }))}
+                      placeholder="Ej: Telefónico, Domiciliario, Presencial"
+                    />
+                  </ResponsiveField>
+                </div>
+                <ResponsiveField label="Observaciones:">
+                  <textarea
+                    className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-eden-500 focus:border-eden-500 text-sm resize-none"
+                    rows={3}
+                    value={form.seguimiento_observaciones || form.seguimiento?.observaciones || ''}
+                    onChange={(e: any) => {
+                      setForm((prev: any) => ({
+                        ...prev,
+                        seguimiento_observaciones: e.target.value,
+                        seguimiento: {
+                          ...prev.seguimiento,
+                          observaciones: e.target.value
+                        }
+                      }));
+                    }}
+                    placeholder="Observaciones del seguimiento..."
+                  />
+                </ResponsiveField>
+              </div>
             </div>
 
             <div className="flex gap-3 pt-4">
