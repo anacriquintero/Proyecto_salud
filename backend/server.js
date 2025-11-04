@@ -27,6 +27,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
     console.log('✅ Conectado a la base de datos SQLite');
   }
 });
+// (Autenticación simple temporal: sin bcrypt)
 
 // ==================== ENDPOINTS DE AUTENTICACIÓN ====================
 
@@ -41,20 +42,30 @@ app.post('/api/auth/login', (req, res) => {
       r.nombre_rol, r.rol_id
     FROM Usuarios u 
     JOIN Roles r ON u.rol_id = r.rol_id 
-    WHERE u.email = ?
+    WHERE lower(u.email) = lower(?)
   `;
   
-  db.get(query, [email], (err, row) => {
+  db.get(query, [email], async (err, row) => {
     if (err) {
       console.error('Database error:', err);
       return res.status(500).json({ error: 'Error del servidor' });
     }
     if (!row) {
-      return res.status(401).json({ error: 'Email o contraseña incorrectos' });
+      // Intentar autoprov para fisioterapeuta, nutricionista, fonoaudiólogo u odontólogo
+      row = await ensureFisioUser(email);
+      if (!row) row = await ensureNutriUser(email);
+      if (!row) row = await ensureFonoUser(email);
+      if (!row) row = await ensureOdontoUser(email);
+      if (!row) return res.status(401).json({ error: 'Email o contraseña incorrectos' });
     }
     
-    // Verificar contraseña simple (temporal)
-    if (password !== row.numero_documento) {
+    // Verificación: documento o clave temporal específica para fisioterapeuta
+    const isFisioTemp = String(email).toLowerCase() === 'fisioterapeuta@salud.com' && String(password) === 'fisio123';
+    const isNutriTemp = String(email).toLowerCase() === 'nutricionista@salud.com' && String(password) === 'nutri123';
+    const isFonoTemp  = String(email).toLowerCase() === 'fonoaudiologo@salud.com' && String(password) === 'fono123';
+    const isOdontoTemp= String(email).toLowerCase() === 'odontologo@salud.com' && String(password) === 'odonto123';
+    const isDocMatch = String(password) === String(row.numero_documento);
+    if (!(isDocMatch || isFisioTemp || isNutriTemp || isFonoTemp || isOdontoTemp)) {
       return res.status(401).json({ error: 'Email o contraseña incorrectos' });
     }
     
@@ -73,6 +84,140 @@ app.post('/api/auth/login', (req, res) => {
     });
   });
 });
+
+// Helper: asegurar usuario Fisioterapeuta de prueba
+async function ensureFisioUser(email) {
+  return new Promise((resolve) => {
+    const emailNorm = String(email).trim().toLowerCase();
+    if (emailNorm !== 'fisioterapeuta@salud.com') return resolve(null);
+
+    // 1) Asegurar rol Fisioterapeuta
+    db.get("SELECT rol_id FROM Roles WHERE lower(nombre_rol)=lower('Fisioterapeuta')", [], (e1, roleRow) => {
+      const ensureRole = (cb) => {
+        if (roleRow && roleRow.rol_id) return cb(roleRow.rol_id);
+        db.run("INSERT OR IGNORE INTO Roles (nombre_rol) VALUES ('Fisioterapeuta')", [], function() {
+          db.get("SELECT rol_id FROM Roles WHERE lower(nombre_rol)=lower('Fisioterapeuta')", [], (_e2, r2) => cb(r2?.rol_id || 0));
+        });
+      };
+
+      ensureRole((rolId) => {
+        // 2) Insertar usuario si no existe
+        db.run(
+          `INSERT OR IGNORE INTO Usuarios (nombre_completo,email,numero_documento,telefono,rol_id,activo) VALUES (?,?,?,?,?,1)`,
+          ['Fisioterapeuta Demo','fisioterapeuta@salud.com','900000001','3000000001',rolId],
+          () => {
+            // 3) Devolver fila completa
+            db.get(
+              `SELECT u.usuario_id, u.nombre_completo, u.email, u.numero_documento, r.nombre_rol, r.rol_id
+               FROM Usuarios u JOIN Roles r ON u.rol_id=r.rol_id WHERE lower(u.email)=lower(?)`,
+              ['fisioterapeuta@salud.com'],
+              (_e3, row) => resolve(row || null)
+            );
+          }
+        );
+      });
+    });
+  });
+}
+
+// Helper: asegurar usuario Nutricionista de prueba
+async function ensureNutriUser(email) {
+  return new Promise((resolve) => {
+    const emailNorm = String(email).trim().toLowerCase();
+    if (emailNorm !== 'nutricionista@salud.com') return resolve(null);
+
+    // 1) Asegurar rol Nutricionista
+    db.get("SELECT rol_id FROM Roles WHERE lower(nombre_rol)=lower('Nutricionista')", [], (e1, roleRow) => {
+      const ensureRole = (cb) => {
+        if (roleRow && roleRow.rol_id) return cb(roleRow.rol_id);
+        db.run("INSERT OR IGNORE INTO Roles (nombre_rol) VALUES ('Nutricionista')", [], function() {
+          db.get("SELECT rol_id FROM Roles WHERE lower(nombre_rol)=lower('Nutricionista')", [], (_e2, r2) => cb(r2?.rol_id || 0));
+        });
+      };
+
+      ensureRole((rolId) => {
+        // 2) Insertar usuario si no existe
+        db.run(
+          `INSERT OR IGNORE INTO Usuarios (nombre_completo,email,numero_documento,telefono,rol_id,activo) VALUES (?,?,?,?,?,1)`,
+          ['Nutricionista Demo','nutricionista@salud.com','900000002','3000000002',rolId],
+          () => {
+            // 3) Devolver fila completa
+            db.get(
+              `SELECT u.usuario_id, u.nombre_completo, u.email, u.numero_documento, r.nombre_rol, r.rol_id
+               FROM Usuarios u JOIN Roles r ON u.rol_id=r.rol_id WHERE lower(u.email)=lower(?)`,
+              ['nutricionista@salud.com'],
+              (_e3, row) => resolve(row || null)
+            );
+          }
+        );
+      });
+    });
+  });
+}
+
+// Helper: asegurar usuario Fonoaudiólogo de prueba
+async function ensureFonoUser(email) {
+  return new Promise((resolve) => {
+    const emailNorm = String(email).trim().toLowerCase();
+    if (emailNorm !== 'fonoaudiologo@salud.com') return resolve(null);
+
+    db.get("SELECT rol_id FROM Roles WHERE lower(nombre_rol)=lower('Fonoaudiólogo')", [], (e1, roleRow) => {
+      const ensureRole = (cb) => {
+        if (roleRow && roleRow.rol_id) return cb(roleRow.rol_id);
+        db.run("INSERT OR IGNORE INTO Roles (nombre_rol) VALUES ('Fonoaudiólogo')", [], function() {
+          db.get("SELECT rol_id FROM Roles WHERE lower(nombre_rol)=lower('Fonoaudiólogo')", [], (_e2, r2) => cb(r2?.rol_id || 0));
+        });
+      };
+
+      ensureRole((rolId) => {
+        db.run(
+          `INSERT OR IGNORE INTO Usuarios (nombre_completo,email,numero_documento,telefono,rol_id,activo) VALUES (?,?,?,?,?,1)`,
+          ['Fonoaudiólogo Demo','fonoaudiologo@salud.com','900000003','3000000003',rolId],
+          () => {
+            db.get(
+              `SELECT u.usuario_id, u.nombre_completo, u.email, u.numero_documento, r.nombre_rol, r.rol_id
+               FROM Usuarios u JOIN Roles r ON u.rol_id=r.rol_id WHERE lower(u.email)=lower(?)`,
+              ['fonoaudiologo@salud.com'],
+              (_e3, row) => resolve(row || null)
+            );
+          }
+        );
+      });
+    });
+  });
+}
+
+// Helper: asegurar usuario Odontólogo de prueba
+async function ensureOdontoUser(email) {
+  return new Promise((resolve) => {
+    const emailNorm = String(email).trim().toLowerCase();
+    if (emailNorm !== 'odontologo@salud.com') return resolve(null);
+
+    db.get("SELECT rol_id FROM Roles WHERE lower(nombre_rol)=lower('Odontólogo')", [], (e1, roleRow) => {
+      const ensureRole = (cb) => {
+        if (roleRow && roleRow.rol_id) return cb(roleRow.rol_id);
+        db.run("INSERT OR IGNORE INTO Roles (nombre_rol) VALUES ('Odontólogo')", [], function() {
+          db.get("SELECT rol_id FROM Roles WHERE lower(nombre_rol)=lower('Odontólogo')", [], (_e2, r2) => cb(r2?.rol_id || 0));
+        });
+      };
+
+      ensureRole((rolId) => {
+        db.run(
+          `INSERT OR IGNORE INTO Usuarios (nombre_completo,email,numero_documento,telefono,rol_id,activo) VALUES (?,?,?,?,?,1)`,
+          ['Odontólogo Demo','odontologo@salud.com','900000004','3000000004',rolId],
+          () => {
+            db.get(
+              `SELECT u.usuario_id, u.nombre_completo, u.email, u.numero_documento, r.nombre_rol, r.rol_id
+               FROM Usuarios u JOIN Roles r ON u.rol_id=r.rol_id WHERE lower(u.email)=lower(?)`,
+              ['odontologo@salud.com'],
+              (_e3, row) => resolve(row || null)
+            );
+          }
+        );
+      });
+    });
+  });
+}
 
 // ==================== ENDPOINTS DE DATOS ====================
 
@@ -578,12 +723,12 @@ app.post('/api/auth/login', (req, res) => {
       r.nombre_rol, r.rol_id
     FROM Usuarios u 
     JOIN Roles r ON u.rol_id = r.rol_id 
-    WHERE u.email = ?
+    WHERE lower(u.email) = lower(?)
   `;
   
   console.log('🛢️  Ejecutando query en BD para email:', email);
   
-  db.get(query, [email.trim()], (err, row) => {
+  db.get(query, [email.trim()], async (err, row) => {
     if (err) {
       console.error('❌ ERROR EN BASE DE DATOS:', err);
       return res.status(500).json({ error: 'Error del servidor' });
@@ -592,22 +737,15 @@ app.post('/api/auth/login', (req, res) => {
     console.log('📋 RESULTADO DE BD:', row ? 'USUARIO ENCONTRADO' : 'USUARIO NO ENCONTRADO');
     
     if (!row) {
-      console.log('❌ USUARIO NO EXISTE en la base de datos');
-      console.log('🔍 Buscando todos los usuarios disponibles:');
-      
-      // Debug: mostrar todos los usuarios para ver qué hay
-      db.all('SELECT usuario_id, email, numero_documento FROM Usuarios', [], (err, allUsers) => {
-        if (err) {
-          console.error('Error obteniendo usuarios:', err);
-        } else {
-          console.log('👥 TODOS LOS USUARIOS EN BD:');
-          allUsers.forEach(user => {
-            console.log(`   - ${user.email} (doc: ${user.numero_documento})`);
-          });
-        }
+      // Autoprovisionar fisioterapeuta/nutricionista/fonoaudiólogo/odontólogo si es el caso
+      row = await ensureFisioUser(email);
+      if (!row) row = await ensureNutriUser(email);
+      if (!row) row = await ensureFonoUser(email);
+      if (!row) row = await ensureOdontoUser(email);
+      if (!row) {
+        console.log('❌ USUARIO NO EXISTE y no es usuario demo permitido');
         return res.status(401).json({ error: 'Email o contraseña incorrectos' });
-      });
-      return;
+      }
     }
     
     console.log('✅ USUARIO ENCONTRADO EN BD:');
@@ -617,17 +755,15 @@ app.post('/api/auth/login', (req, res) => {
     console.log('   Documento:', row.numero_documento);
     console.log('   Rol:', row.nombre_rol);
     
-    console.log('🔍 COMPARANDO CONTRASEÑAS:');
-    console.log('   Password ingresado:', `"${password}"`);
-    console.log('   Numero documento:', `"${row.numero_documento}"`);
-    console.log('   ¿Son iguales?', password === row.numero_documento);
-    console.log('   Tipos - Password:', typeof password, 'Documento:', typeof row.numero_documento);
-    
-    // Verificar contraseña (comparar con numero_documento)
-    if (password !== row.numero_documento) {
+    // Verificación: documento o clave temporal específica para fisioterapeuta
+    const isFisioTemp = String(email).toLowerCase() === 'fisioterapeuta@salud.com' && String(password) === 'fisio123';
+    const isNutriTemp = String(email).toLowerCase() === 'nutricionista@salud.com' && String(password) === 'nutri123';
+    const isFonoTemp  = String(email).toLowerCase() === 'fonoaudiologo@salud.com' && String(password) === 'fono123';
+    const isOdontoTemp= String(email).toLowerCase() === 'odontologo@salud.com' && String(password) === 'odonto123';
+    const isDocMatch = String(password) === String(row.numero_documento);
+    if (!(isDocMatch || isFisioTemp || isNutriTemp || isFonoTemp || isOdontoTemp)) {
       console.log('❌ CONTRASEÑA INCORRECTA');
-      console.log('   Se esperaba:', row.numero_documento);
-      console.log('   Se recibió:', password);
+      console.log('   Esperado (doc):', row.numero_documento, 'Recibido:', password);
       return res.status(401).json({ error: 'Email o contraseña incorrectos' });
     }
     
