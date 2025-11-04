@@ -7,6 +7,7 @@ const fs = require('fs');
 const fetch = require('node-fetch');
 const FormData = require('form-data');
 const multer = require('multer');
+const adresService = require('./services/adresService');
 require('dotenv').config();
 
 const app = express();
@@ -330,6 +331,7 @@ app.post('/api/hc/medicina', (req, res) => {
     paciente_id,
     usuario_id,
     fecha_atencion,
+    hora_consulta,
     motivo_consulta,
     enfermedad_actual,
     antecedentes_personales,
@@ -341,7 +343,33 @@ app.post('/api/hc/medicina', (req, res) => {
     diagnosticos_cie10,
     plan_manejo,
     recomendaciones,
-    proxima_cita
+    proxima_cita,
+    // Enfoque diferencial
+    enfoque_diferencial,
+    // Signos vitales expandidos
+    tension_arterial_sistolica,
+    tension_arterial_diastolica,
+    frecuencia_cardiaca,
+    frecuencia_respiratoria,
+    saturacion_oxigeno,
+    temperatura,
+    // Medidas antropométricas
+    peso,
+    talla,
+    imc,
+    perimetro_cefalico,
+    perimetro_toracico,
+    perimetro_abdominal,
+    perimetro_braquial,
+    perimetro_pantorrilla,
+    // Otros parámetros
+    glucometria,
+    glasgow,
+    // Campos adicionales
+    conducta_seguir,
+    evolucion,
+    analisis,
+    fecha_hora_egreso
   } = req.body;
 
   if (!paciente_id || !usuario_id || !motivo_consulta || !diagnosticos_cie10) {
@@ -380,19 +408,40 @@ app.post('/api/hc/medicina', (req, res) => {
       // 2. Crear historia clínica asociada
       const insertHC = `
         INSERT INTO HC_Medicina_General (
-          atencion_id, motivo_consulta, enfermedad_actual,
+          atencion_id, hora_consulta, motivo_consulta, enfermedad_actual,
           antecedentes_personales, antecedentes_familiares,
           revision_por_sistemas, signos_vitales,
           examen_fisico, diagnosticos_cie10, plan_manejo,
-          recomendaciones, proxima_cita
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          recomendaciones, proxima_cita,
+          enfoque_diferencial,
+          tension_arterial_sistolica, tension_arterial_diastolica,
+          frecuencia_cardiaca, frecuencia_respiratoria,
+          saturacion_oxigeno, temperatura,
+          peso, talla, imc,
+          perimetro_cefalico, perimetro_toracico, perimetro_abdominal,
+          perimetro_braquial, perimetro_pantorrilla,
+          glucometria, glasgow,
+          conducta_seguir, evolucion, analisis,
+          fecha_hora_egreso
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
+
+      // Procesar antecedentes_personales como JSON si viene como objeto
+      const antPersonales = typeof antecedentes_personales === 'object' 
+        ? JSON.stringify(antecedentes_personales) 
+        : antecedentes_personales;
+
+      // Procesar enfoque_diferencial como JSON si viene como objeto
+      const enfoqueDiff = typeof enfoque_diferencial === 'object'
+        ? JSON.stringify(enfoque_diferencial)
+        : enfoque_diferencial;
 
       db.run(insertHC, [
         atencionId,
+        hora_consulta || null,
         motivo_consulta,
         enfermedad_actual || null,
-        antecedentes_personales || null,
+        antPersonales || null,
         antecedentes_familiares || null,
         revision_por_sistemas || null,
         signos_vitales || null,
@@ -400,7 +449,28 @@ app.post('/api/hc/medicina', (req, res) => {
         diagnosticos_cie10,
         plan_manejo || null,
         recomendaciones || null,
-        proxima_cita || null
+        proxima_cita || null,
+        enfoqueDiff || null,
+        tension_arterial_sistolica || null,
+        tension_arterial_diastolica || null,
+        frecuencia_cardiaca || null,
+        frecuencia_respiratoria || null,
+        saturacion_oxigeno || null,
+        temperatura || null,
+        peso || null,
+        talla || null,
+        imc || null,
+        perimetro_cefalico || null,
+        perimetro_toracico || null,
+        perimetro_abdominal || null,
+        perimetro_braquial || null,
+        perimetro_pantorrilla || null,
+        glucometria || null,
+        glasgow || null,
+        conducta_seguir || null,
+        evolucion || null,
+        analisis || null,
+        fecha_hora_egreso || null
       ], function(err) {
         if (err) {
           console.error('Error creando HC Medicina:', err);
@@ -427,11 +497,21 @@ app.get('/api/hc/medicina/:atencion_id', (req, res) => {
   
   const query = `
     SELECT 
-      atencion_id, motivo_consulta, enfermedad_actual,
+      atencion_id, hora_consulta, motivo_consulta, enfermedad_actual,
       antecedentes_personales, antecedentes_familiares,
       revision_por_sistemas, signos_vitales,
       examen_fisico, diagnosticos_cie10, plan_manejo, 
-      recomendaciones, proxima_cita
+      recomendaciones, proxima_cita,
+      enfoque_diferencial,
+      tension_arterial_sistolica, tension_arterial_diastolica,
+      frecuencia_cardiaca, frecuencia_respiratoria,
+      saturacion_oxigeno, temperatura,
+      peso, talla, imc,
+      perimetro_cefalico, perimetro_toracico, perimetro_abdominal,
+      perimetro_braquial, perimetro_pantorrilla,
+      glucometria, glasgow,
+      conducta_seguir, evolucion, analisis,
+      fecha_hora_egreso
     FROM HC_Medicina_General
     WHERE atencion_id = ?
   `;
@@ -444,6 +524,32 @@ app.get('/api/hc/medicina/:atencion_id', (req, res) => {
     if (!row) {
       return res.status(404).json({ error: 'Historia clínica no encontrada' });
     }
+    
+    // Parsear campos JSON de forma segura
+    try {
+      if (row.antecedentes_personales && typeof row.antecedentes_personales === 'string') {
+        row.antecedentes_personales = JSON.parse(row.antecedentes_personales);
+      }
+    } catch (e) {
+      console.error('Error parseando antecedentes_personales:', e);
+    }
+    
+    try {
+      if (row.enfoque_diferencial && typeof row.enfoque_diferencial === 'string') {
+        row.enfoque_diferencial = JSON.parse(row.enfoque_diferencial);
+      }
+    } catch (e) {
+      console.error('Error parseando enfoque_diferencial:', e);
+    }
+    
+    try {
+      if (row.revision_por_sistemas && typeof row.revision_por_sistemas === 'string') {
+        row.revision_por_sistemas = JSON.parse(row.revision_por_sistemas);
+      }
+    } catch (e) {
+      console.error('Error parseando revision_por_sistemas:', e);
+    }
+    
     res.json(row);
   });
 });
@@ -546,29 +652,105 @@ app.post('/api/auth/login', (req, res) => {
 app.put('/api/hc/medicina/:atencion_id', (req, res) => {
   const { atencion_id } = req.params;
   const {
+    hora_consulta,
     motivo_consulta, enfermedad_actual,
     antecedentes_personales, antecedentes_familiares,
     revision_por_sistemas, signos_vitales,
     examen_fisico, diagnosticos_cie10, plan_manejo, 
-    recomendaciones, proxima_cita
+    recomendaciones, proxima_cita,
+    enfoque_diferencial,
+    tension_arterial_sistolica,
+    tension_arterial_diastolica,
+    frecuencia_cardiaca,
+    frecuencia_respiratoria,
+    saturacion_oxigeno,
+    temperatura,
+    peso,
+    talla,
+    imc,
+    perimetro_cefalico,
+    perimetro_toracico,
+    perimetro_abdominal,
+    perimetro_braquial,
+    perimetro_pantorrilla,
+    glucometria,
+    glasgow,
+    conducta_seguir,
+    evolucion,
+    analisis,
+    fecha_hora_egreso
   } = req.body;
+
+  // Procesar campos JSON
+  const antPersonales = typeof antecedentes_personales === 'object' 
+    ? JSON.stringify(antecedentes_personales) 
+    : antecedentes_personales;
+  
+  const enfoqueDiff = typeof enfoque_diferencial === 'object'
+    ? JSON.stringify(enfoque_diferencial)
+    : enfoque_diferencial;
 
   const query = `
     UPDATE HC_Medicina_General SET
+      hora_consulta = ?,
       motivo_consulta = ?, enfermedad_actual = ?,
       antecedentes_personales = ?, antecedentes_familiares = ?,
       revision_por_sistemas = ?, signos_vitales = ?,
       examen_fisico = ?, diagnosticos_cie10 = ?,
-      plan_manejo = ?, recomendaciones = ?, proxima_cita = ?
+      plan_manejo = ?, recomendaciones = ?, proxima_cita = ?,
+      enfoque_diferencial = ?,
+      tension_arterial_sistolica = ?,
+      tension_arterial_diastolica = ?,
+      frecuencia_cardiaca = ?,
+      frecuencia_respiratoria = ?,
+      saturacion_oxigeno = ?,
+      temperatura = ?,
+      peso = ?,
+      talla = ?,
+      imc = ?,
+      perimetro_cefalico = ?,
+      perimetro_toracico = ?,
+      perimetro_abdominal = ?,
+      perimetro_braquial = ?,
+      perimetro_pantorrilla = ?,
+      glucometria = ?,
+      glasgow = ?,
+      conducta_seguir = ?,
+      evolucion = ?,
+      analisis = ?,
+      fecha_hora_egreso = ?
     WHERE atencion_id = ?
   `;
 
   const params = [
-    motivo_consulta, enfermedad_actual,
-    antecedentes_personales, antecedentes_familiares,
-    revision_por_sistemas, signos_vitales,
-    examen_fisico, diagnosticos_cie10, plan_manejo, 
-    recomendaciones, proxima_cita, atencion_id
+    hora_consulta || null,
+    motivo_consulta, enfermedad_actual || null,
+    antPersonales || null, antecedentes_familiares || null,
+    revision_por_sistemas || null, signos_vitales || null,
+    examen_fisico || null, diagnosticos_cie10,
+    plan_manejo || null, recomendaciones || null, proxima_cita || null,
+    enfoqueDiff || null,
+    tension_arterial_sistolica || null,
+    tension_arterial_diastolica || null,
+    frecuencia_cardiaca || null,
+    frecuencia_respiratoria || null,
+    saturacion_oxigeno || null,
+    temperatura || null,
+    peso || null,
+    talla || null,
+    imc || null,
+    perimetro_cefalico || null,
+    perimetro_toracico || null,
+    perimetro_abdominal || null,
+    perimetro_braquial || null,
+    perimetro_pantorrilla || null,
+    glucometria || null,
+    glasgow || null,
+    conducta_seguir || null,
+    evolucion || null,
+    analisis || null,
+    fecha_hora_egreso || null,
+    atencion_id
   ];
 
   db.run(query, params, function(err) {
@@ -774,6 +956,9 @@ app.post('/api/caracterizaciones', (req, res) => {
         numero_ficha = ?,
         zona = ?,
         territorio = ?,
+        micro_territorio = ?,
+        barrio = ?,
+        numero_personas = ?,
         estrato = ?,
         tipo_familia = ?,
         riesgo_familiar = ?,
@@ -789,13 +974,16 @@ app.post('/api/caracterizaciones', (req, res) => {
       datos_familia.numero_ficha || null,
       datos_familia.zona || null,
       datos_familia.territorio || null,
+      datos_familia.micro_territorio || null,
+      datos_familia.barrio || null,
+      datos_familia.numero_personas || null,
       datos_familia.estrato || null,
       datos_familia.tipo_familia || null,
       datos_familia.riesgo_familiar || null,
       datos_familia.fecha_caracterizacion || null,
       JSON.stringify(datos_familia.info_vivienda || {}),
       JSON.stringify(datos_familia.situaciones_proteccion || []),
-      JSON.stringify(datos_familia.condiciones_salud_publica || []),
+      JSON.stringify(datos_familia.condiciones_salud_publica || {}),
       JSON.stringify(datos_familia.practicas_cuidado || {}),
       familia_id
     ];
@@ -827,14 +1015,21 @@ app.post('/api/caracterizaciones', (req, res) => {
               paciente_id, fecha_caracterizacion, rol_familiar, ocupacion,
               nivel_educativo, grupo_poblacional, regimen_afiliacion,
               pertenencia_etnica, discapacidad, victima_violencia,
-              datos_pyp, datos_salud, creado_por_uid
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              telefono_1, orientacion_sexual, comunidad_indigena,
+              datos_pyp, datos_salud, tiempo_cuidador, creado_por_uid
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `;
           
           let completed = 0;
           let errors = 0;
           
           integrantes.forEach((integrante, index) => {
+            // Incluir tiempo_cuidador en datos_salud si no está en el nivel superior
+            const datosSaludCompletos = {
+              ...(integrante.datos_salud || {}),
+              tiempo_cuidador: integrante.tiempo_cuidador || integrante.datos_salud?.tiempo_cuidador
+            };
+            
             const paramsPaciente = [
               integrante.paciente_id,
               integrante.fecha_caracterizacion || datos_familia.fecha_caracterizacion || new Date().toISOString().split('T')[0],
@@ -846,8 +1041,12 @@ app.post('/api/caracterizaciones', (req, res) => {
               integrante.pertenencia_etnica || null,
               JSON.stringify(integrante.discapacidad || []),
               integrante.victima_violencia || false,
+              integrante.telefono_1 || null,
+              integrante.orientacion_sexual || null,
+              integrante.comunidad_indigena || false,
               JSON.stringify(integrante.datos_pyp || {}),
-              JSON.stringify(integrante.datos_salud || {}),
+              JSON.stringify(datosSaludCompletos),
+              integrante.tiempo_cuidador || null,
               integrante.creado_por_uid || null
             ];
             
@@ -955,21 +1154,33 @@ app.get('/api/familias/:id/caracterizacion', (req, res) => {
         return res.status(500).json({ error: 'Error obteniendo datos de pacientes' });
       }
       
-      // Procesar datos JSON
+      // Procesar datos JSON de forma segura
       const familiaProcesada = {
         ...familia,
-        info_vivienda: familia.info_vivienda ? JSON.parse(familia.info_vivienda) : {},
-        situaciones_proteccion: familia.situaciones_proteccion ? JSON.parse(familia.situaciones_proteccion) : [],
-        condiciones_salud_publica: familia.condiciones_salud_publica ? JSON.parse(familia.condiciones_salud_publica) : [],
-        practicas_cuidado: familia.practicas_cuidado ? JSON.parse(familia.practicas_cuidado) : {}
+        info_vivienda: familia.info_vivienda ? (typeof familia.info_vivienda === 'string' ? JSON.parse(familia.info_vivienda) : familia.info_vivienda) : {},
+        situaciones_proteccion: familia.situaciones_proteccion ? (typeof familia.situaciones_proteccion === 'string' ? JSON.parse(familia.situaciones_proteccion) : familia.situaciones_proteccion) : [],
+        condiciones_salud_publica: familia.condiciones_salud_publica ? (typeof familia.condiciones_salud_publica === 'string' ? JSON.parse(familia.condiciones_salud_publica) : familia.condiciones_salud_publica) : {},
+        practicas_cuidado: familia.practicas_cuidado ? (typeof familia.practicas_cuidado === 'string' ? JSON.parse(familia.practicas_cuidado) : familia.practicas_cuidado) : {}
       };
       
-      const pacientesProcesados = pacientes.map(p => ({
-        ...p,
-        discapacidad: p.discapacidad ? JSON.parse(p.discapacidad) : [],
-        datos_pyp: p.datos_pyp ? JSON.parse(p.datos_pyp) : {},
-        datos_salud: p.datos_salud ? JSON.parse(p.datos_salud) : {}
-      }));
+      const pacientesProcesados = pacientes.map(p => {
+        try {
+          return {
+            ...p,
+            discapacidad: p.discapacidad ? (typeof p.discapacidad === 'string' ? JSON.parse(p.discapacidad) : p.discapacidad) : [],
+            datos_pyp: p.datos_pyp ? (typeof p.datos_pyp === 'string' ? JSON.parse(p.datos_pyp) : p.datos_pyp) : {},
+            datos_salud: p.datos_salud ? (typeof p.datos_salud === 'string' ? JSON.parse(p.datos_salud) : p.datos_salud) : {}
+          };
+        } catch (parseErr) {
+          console.error('Error parseando datos de paciente:', parseErr);
+          return {
+            ...p,
+            discapacidad: [],
+            datos_pyp: {},
+            datos_salud: {}
+          };
+        }
+      });
       
       res.json({
         familia: familiaProcesada,
@@ -1043,7 +1254,16 @@ app.post('/api/planes-cuidado', (req, res) => {
     educacion_salud,
     estado,
     creado_por_uid,
-    fecha_aceptacion
+    fecha_aceptacion,
+    numero_ficha_relacionada,
+    nombre_encuestado_principal,
+    territorio,
+    micro_territorio,
+    direccion,
+    telefono,
+    profesional_entrega,
+    ebs_numero,
+    relaciones_salud_mental
   } = req.body;
   
   if (!paciente_principal_id || !fecha_entrega || !creado_por_uid) {
@@ -1078,8 +1298,10 @@ app.post('/api/planes-cuidado', (req, res) => {
     INSERT INTO Planes_Cuidado_Familiar (
       familia_id, paciente_id, paciente_principal_id, fecha_entrega, plan_asociado,
       condicion_identificada, logro_salud, cuidados_salud, demandas_inducidas_desc,
-      educacion_salud, estado, creado_por_uid, fecha_aceptacion
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      educacion_salud, estado, creado_por_uid, fecha_aceptacion,
+      numero_ficha_relacionada, nombre_encuestado_principal, territorio, micro_territorio,
+      direccion, telefono, profesional_entrega, ebs_numero, relaciones_salud_mental
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `;
   
     const params = [
@@ -1095,7 +1317,16 @@ app.post('/api/planes-cuidado', (req, res) => {
       educacion_salud || null,
       estado || 'Activo',
       creado_por_uid,
-      fecha_aceptacion || null
+      fecha_aceptacion || null,
+      numero_ficha_relacionada || null,
+      nombre_encuestado_principal || null,
+      territorio || null,
+      micro_territorio || null,
+      direccion || null,
+      telefono || null,
+      profesional_entrega || null,
+      ebs_numero || null,
+      relaciones_salud_mental || null
     ];
     
     db.run(insert, params, function(err) {
@@ -1207,7 +1438,25 @@ app.post('/api/demandas-inducidas', (req, res) => {
     estado,
     asignado_a_uid,
     solicitado_por_uid,
-    seguimiento
+    seguimiento,
+    edad,
+    sexo,
+    eps,
+    regimen,
+    ips_atencion,
+    ebs_numero,
+    educacion_salud,
+    intervencion_efectiva,
+    tipo_identificacion,
+    numero_identificacion,
+    telefono,
+    direccion,
+    nombres_completos,
+    intervencion_efectiva_si,
+    seguimiento_verificado,
+    seguimiento_medio,
+    seguimiento_fecha,
+    seguimiento_observaciones
   } = req.body;
   
   if (!paciente_id || !fecha_demanda || !solicitado_por_uid) {
@@ -1228,11 +1477,23 @@ app.post('/api/demandas-inducidas', (req, res) => {
     }
   }
   
+  // Construir objeto de seguimiento completo
+  const seguimientoCompleto = {
+    ...(seguimiento || {}),
+    fecha_seguimiento: seguimiento_fecha || seguimiento?.fecha_seguimiento || null,
+    observaciones: seguimiento_observaciones || seguimiento?.observaciones || null,
+    medio: seguimiento_medio || null,
+    verificado: seguimiento_verificado !== undefined ? seguimiento_verificado : null
+  };
+
   const insert = `
     INSERT INTO Demandas_Inducidas (
       numero_formulario, paciente_id, plan_id, fecha_demanda, diligenciamiento,
-      remision_a, estado, asignado_a_uid, solicitado_por_uid, seguimiento
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      remision_a, estado, asignado_a_uid, solicitado_por_uid, seguimiento,
+      edad, sexo, eps, regimen, ips_atencion, ebs_numero, educacion_salud, intervencion_efectiva,
+      tipo_identificacion, numero_identificacion, telefono, direccion, nombres_completos,
+      intervencion_efectiva_si, seguimiento_verificado, seguimiento_medio
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `;
   
   const params = [
@@ -1245,7 +1506,23 @@ app.post('/api/demandas-inducidas', (req, res) => {
     estado || 'Pendiente',
     asignado_a_uid || null,
     solicitado_por_uid,
-    JSON.stringify(seguimiento || {})
+    JSON.stringify(seguimientoCompleto),
+    edad || null,
+    sexo || null,
+    eps || null,
+    regimen || null,
+    ips_atencion || null,
+    ebs_numero || null,
+    educacion_salud || null,
+    intervencion_efectiva || null,
+    tipo_identificacion || null,
+    numero_identificacion || null,
+    telefono || null,
+    direccion || null,
+    nombres_completos || null,
+    intervencion_efectiva_si !== undefined ? (intervencion_efectiva_si ? 1 : 0) : null,
+    seguimiento_verificado !== undefined ? (seguimiento_verificado ? 1 : 0) : null,
+    seguimiento_medio || null
   ];
   
   db.run(insert, params, function(err) {
@@ -1398,6 +1675,10 @@ app.get('/api/pacientes/:id/recetas', (req, res) => {
       rm.indicaciones,
       rm.estado,
       rm.fecha_impresion,
+      rm.codigo_diagnostico_principal,
+      rm.codigo_diagnostico_rel1,
+      rm.codigo_diagnostico_rel2,
+      rm.recomendaciones,
       ac.fecha_atencion,
       u.nombre_completo as medico_nombre
     FROM Recetas_Medicas rm
@@ -1444,7 +1725,11 @@ app.post('/api/recetas', (req, res) => {
     fecha_receta,
     medicamentos,
     indicaciones,
-    estado
+    estado,
+    codigo_diagnostico_principal,
+    codigo_diagnostico_rel1,
+    codigo_diagnostico_rel2,
+    recomendaciones
   } = req.body;
 
   if (!atencion_id || !paciente_id || !usuario_id || !medicamentos) {
@@ -1456,8 +1741,10 @@ app.post('/api/recetas', (req, res) => {
   const insert = `
     INSERT INTO Recetas_Medicas (
       atencion_id, paciente_id, usuario_id, fecha_receta,
-      medicamentos, indicaciones, estado
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      medicamentos, indicaciones, estado,
+      codigo_diagnostico_principal, codigo_diagnostico_rel1, codigo_diagnostico_rel2,
+      recomendaciones
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `;
 
   const fechaReceta = fecha_receta || new Date().toISOString().split('T')[0];
@@ -1472,7 +1759,11 @@ app.post('/api/recetas', (req, res) => {
     fechaReceta,
     medicamentosJSON,
     indicaciones || null,
-    estado || 'Activa'
+    estado || 'Activa',
+    codigo_diagnostico_principal || null,
+    codigo_diagnostico_rel1 || null,
+    codigo_diagnostico_rel2 || null,
+    recomendaciones || null
   ], function(err) {
     if (err) {
       console.error('Error creando receta:', err);
@@ -1519,6 +1810,9 @@ app.get('/api/pacientes/:id/ordenes-laboratorio', (req, res) => {
       ol.indicaciones_clinicas,
       ol.estado,
       ol.fecha_impresion,
+      ol.servicio,
+      ol.numero_carnet,
+      ol.diagnostico_justificacion,
       ac.fecha_atencion,
       u.nombre_completo as medico_nombre
     FROM Ordenes_Laboratorio ol
@@ -1565,26 +1859,36 @@ app.post('/api/ordenes-laboratorio', (req, res) => {
     fecha_orden,
     examenes,
     indicaciones_clinicas,
-    estado
+    examenes_solicitados,
+    estado,
+    servicio,
+    numero_carnet,
+    diagnostico_justificacion
   } = req.body;
 
-  if (!atencion_id || !paciente_id || !usuario_id || !examenes) {
+  // Para compatibilidad, usar examenes_solicitados si viene, sino indicaciones_clinicas
+  const examenesTexto = examenes_solicitados || indicaciones_clinicas || '';
+  
+  // Si viene examenes como array/JSON, mantenerlo para compatibilidad
+  const examenesJSON = examenes && typeof examenes === 'object'
+    ? JSON.stringify(examenes)
+    : (examenes || null);
+
+  if (!atencion_id || !paciente_id || !usuario_id) {
     return res.status(400).json({
-      error: 'Faltan campos obligatorios: atencion_id, paciente_id, usuario_id, examenes'
+      error: 'Faltan campos obligatorios: atencion_id, paciente_id, usuario_id'
     });
   }
 
   const insert = `
     INSERT INTO Ordenes_Laboratorio (
       atencion_id, paciente_id, usuario_id, fecha_orden,
-      examenes, indicaciones_clinicas, estado
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      examenes, indicaciones_clinicas, estado,
+      servicio, numero_carnet, diagnostico_justificacion
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `;
 
   const fechaOrden = fecha_orden || new Date().toISOString().split('T')[0];
-  const examenesJSON = typeof examenes === 'string' 
-    ? examenes 
-    : JSON.stringify(examenes);
 
   db.run(insert, [
     atencion_id,
@@ -1592,8 +1896,11 @@ app.post('/api/ordenes-laboratorio', (req, res) => {
     usuario_id,
     fechaOrden,
     examenesJSON,
-    indicaciones_clinicas || null,
-    estado || 'Pendiente'
+    examenesTexto || null,
+    estado || 'Pendiente',
+    servicio || null,
+    numero_carnet || null,
+    diagnostico_justificacion || null
   ], function(err) {
     if (err) {
       console.error('Error creando orden de laboratorio:', err);
@@ -1866,6 +2173,332 @@ app.post('/api/stt', upload.single('audio'), async (req, res) => {
   } catch (err) {
     console.error('STT error:', err);
     return res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+// ==================== ENDPOINTS PERFILES AUTOCOMPLETADO ====================
+
+// GET: Obtener todos los perfiles (filtrados por tipo si se especifica)
+// Muestra perfiles públicos (creado_por_uid IS NULL) + perfiles del usuario actual
+app.get('/api/perfiles-autocompletado', (req, res) => {
+  const { tipo_perfil, usuario_id } = req.query;
+  
+  console.log('📥 [GET /api/perfiles-autocompletado] Query params:', { tipo_perfil, usuario_id });
+  
+  let query = `
+    SELECT 
+      Perfiles_Autocompletado.perfil_id, 
+      Perfiles_Autocompletado.nombre_perfil, 
+      Perfiles_Autocompletado.descripcion, 
+      Perfiles_Autocompletado.tipo_perfil, 
+      Perfiles_Autocompletado.datos_perfil, 
+      Perfiles_Autocompletado.creado_por_uid, 
+      Perfiles_Autocompletado.activo, 
+      Perfiles_Autocompletado.fecha_creacion, 
+      Perfiles_Autocompletado.fecha_actualizacion,
+      u.nombre_completo as creado_por_nombre
+    FROM Perfiles_Autocompletado
+    LEFT JOIN Usuarios u ON Perfiles_Autocompletado.creado_por_uid = u.usuario_id
+    WHERE Perfiles_Autocompletado.activo = 1
+  `;
+  
+  const params = [];
+  
+  // Agregar filtro de usuario: mostrar públicos (creado_por_uid IS NULL) + del usuario si existe
+  if (usuario_id && usuario_id !== 'undefined' && usuario_id !== 'null') {
+    query += ' AND (Perfiles_Autocompletado.creado_por_uid IS NULL OR Perfiles_Autocompletado.creado_por_uid = ?)';
+    params.push(parseInt(usuario_id));
+    console.log('📥 [GET] Incluyendo perfiles del usuario:', usuario_id);
+  } else {
+    // Si no hay usuario_id, solo mostrar públicos
+    query += ' AND Perfiles_Autocompletado.creado_por_uid IS NULL';
+    console.log('📥 [GET] Solo mostrando perfiles públicos');
+  }
+  
+  if (tipo_perfil) {
+    query += ' AND Perfiles_Autocompletado.tipo_perfil = ?';
+    params.push(tipo_perfil);
+    console.log('📥 [GET] Filtrando por tipo_perfil:', tipo_perfil);
+  }
+  
+  query += ' ORDER BY Perfiles_Autocompletado.creado_por_uid IS NULL DESC, Perfiles_Autocompletado.nombre_perfil';
+  
+  console.log('📥 [GET] Query final:', query);
+  console.log('📥 [GET] Params:', params);
+  
+  db.all(query, params, (err, rows) => {
+    if (err) {
+      console.error('❌ Error obteniendo perfiles:', err);
+      console.error('❌ Query:', query);
+      console.error('❌ Params:', params);
+      return res.status(500).json({ error: 'Error obteniendo perfiles', details: err.message });
+    }
+    
+    console.log(`✅ Perfiles encontrados: ${rows.length}`);
+    
+    // Parsear JSON de datos_perfil
+    const perfiles = rows.map(row => {
+      try {
+        return {
+          ...row,
+          datos_perfil: typeof row.datos_perfil === 'string' 
+            ? JSON.parse(row.datos_perfil) 
+            : row.datos_perfil
+        };
+      } catch (parseError) {
+        console.error('❌ Error parseando datos_perfil del perfil:', row.perfil_id, parseError);
+        return {
+          ...row,
+          datos_perfil: {}
+        };
+      }
+    });
+    
+    console.log(`✅ Perfiles parseados exitosamente: ${perfiles.length}`);
+    res.json(perfiles);
+  });
+});
+
+// GET: Obtener un perfil por ID
+app.get('/api/perfiles-autocompletado/:id', (req, res) => {
+  const { id } = req.params;
+  
+  db.get(
+    `SELECT 
+      perfil_id, nombre_perfil, descripcion, tipo_perfil, 
+      datos_perfil, creado_por_uid, activo, 
+      fecha_creacion, fecha_actualizacion
+    FROM Perfiles_Autocompletado
+    WHERE perfil_id = ? AND activo = 1`,
+    [id],
+    (err, row) => {
+      if (err) {
+        console.error('Error obteniendo perfil:', err);
+        return res.status(500).json({ error: 'Error obteniendo perfil' });
+      }
+      
+      if (!row) {
+        return res.status(404).json({ error: 'Perfil no encontrado' });
+      }
+      
+      // Parsear JSON de datos_perfil
+      const perfil = {
+        ...row,
+        datos_perfil: typeof row.datos_perfil === 'string' 
+          ? JSON.parse(row.datos_perfil) 
+          : row.datos_perfil
+      };
+      
+      res.json(perfil);
+    }
+  );
+});
+
+// POST: Crear un nuevo perfil
+app.post('/api/perfiles-autocompletado', (req, res) => {
+  const { nombre_perfil, descripcion, tipo_perfil, datos_perfil, creado_por_uid } = req.body;
+  
+  if (!nombre_perfil || !datos_perfil) {
+    return res.status(400).json({ 
+      error: 'Faltan campos obligatorios: nombre_perfil, datos_perfil' 
+    });
+  }
+  
+  const datosJSON = typeof datos_perfil === 'string' 
+    ? datos_perfil 
+    : JSON.stringify(datos_perfil);
+  
+  const insert = `
+    INSERT INTO Perfiles_Autocompletado 
+    (nombre_perfil, descripcion, tipo_perfil, datos_perfil, creado_por_uid, activo)
+    VALUES (?, ?, ?, ?, ?, 1)
+  `;
+  
+  db.run(insert, [
+    nombre_perfil,
+    descripcion || null,
+    tipo_perfil || 'HC_Medicina',
+    datosJSON,
+    creado_por_uid || null
+  ], function(err) {
+    if (err) {
+      console.error('Error creando perfil:', err);
+      if (err.message.includes('UNIQUE constraint')) {
+        return res.status(400).json({ error: 'Ya existe un perfil con ese nombre' });
+      }
+      return res.status(500).json({ error: 'Error creando perfil' });
+    }
+    
+    // Obtener el perfil creado
+    db.get(
+      `SELECT * FROM Perfiles_Autocompletado WHERE perfil_id = ?`,
+      [this.lastID],
+      (err, row) => {
+        if (err || !row) {
+          return res.status(201).json({ 
+            perfil_id: this.lastID, 
+            message: 'Perfil creado exitosamente' 
+          });
+        }
+        
+        const perfil = {
+          ...row,
+          datos_perfil: typeof row.datos_perfil === 'string' 
+            ? JSON.parse(row.datos_perfil) 
+            : row.datos_perfil
+        };
+        
+        res.status(201).json(perfil);
+      }
+    );
+  });
+});
+
+// PUT: Actualizar un perfil
+app.put('/api/perfiles-autocompletado/:id', (req, res) => {
+  const { id } = req.params;
+  const { nombre_perfil, descripcion, tipo_perfil, datos_perfil } = req.body;
+  
+  // Construir query dinámicamente
+  const updates = [];
+  const params = [];
+  
+  if (nombre_perfil !== undefined) {
+    updates.push('nombre_perfil = ?');
+    params.push(nombre_perfil);
+  }
+  
+  if (descripcion !== undefined) {
+    updates.push('descripcion = ?');
+    params.push(descripcion);
+  }
+  
+  if (tipo_perfil !== undefined) {
+    updates.push('tipo_perfil = ?');
+    params.push(tipo_perfil);
+  }
+  
+  if (datos_perfil !== undefined) {
+    updates.push('datos_perfil = ?');
+    params.push(typeof datos_perfil === 'string' 
+      ? datos_perfil 
+      : JSON.stringify(datos_perfil));
+  }
+  
+  if (updates.length === 0) {
+    return res.status(400).json({ error: 'No hay campos para actualizar' });
+  }
+  
+  updates.push('fecha_actualizacion = CURRENT_TIMESTAMP');
+  params.push(id);
+  
+  const update = `
+    UPDATE Perfiles_Autocompletado 
+    SET ${updates.join(', ')}
+    WHERE perfil_id = ? AND activo = 1
+  `;
+  
+  db.run(update, params, function(err) {
+    if (err) {
+      console.error('Error actualizando perfil:', err);
+      if (err.message.includes('UNIQUE constraint')) {
+        return res.status(400).json({ error: 'Ya existe un perfil con ese nombre' });
+      }
+      return res.status(500).json({ error: 'Error actualizando perfil' });
+    }
+    
+    if (this.changes === 0) {
+      return res.status(404).json({ error: 'Perfil no encontrado' });
+    }
+    
+    // Obtener el perfil actualizado
+    db.get(
+      `SELECT * FROM Perfiles_Autocompletado WHERE perfil_id = ?`,
+      [id],
+      (err, row) => {
+        if (err || !row) {
+          return res.json({ message: 'Perfil actualizado exitosamente' });
+        }
+        
+        const perfil = {
+          ...row,
+          datos_perfil: typeof row.datos_perfil === 'string' 
+            ? JSON.parse(row.datos_perfil) 
+            : row.datos_perfil
+        };
+        
+        res.json(perfil);
+      }
+    );
+  });
+});
+
+// DELETE: Eliminar (desactivar) un perfil
+app.delete('/api/perfiles-autocompletado/:id', (req, res) => {
+  const { id } = req.params;
+  
+  db.run(
+    `UPDATE Perfiles_Autocompletado 
+     SET activo = 0, fecha_actualizacion = CURRENT_TIMESTAMP
+     WHERE perfil_id = ?`,
+    [id],
+    function(err) {
+      if (err) {
+        console.error('Error eliminando perfil:', err);
+        return res.status(500).json({ error: 'Error eliminando perfil' });
+      }
+      
+      if (this.changes === 0) {
+        return res.status(404).json({ error: 'Perfil no encontrado' });
+      }
+      
+      res.json({ message: 'Perfil eliminado exitosamente' });
+    }
+  );
+});
+
+// ==================== ENDPOINT CONSULTA ADRES ====================
+
+// GET: Consultar datos de paciente desde ADRES por número de documento
+app.get('/api/pacientes/consultar-adres/:numero_documento', async (req, res) => {
+  try {
+    const { numero_documento } = req.params;
+    const { tipo_documento } = req.query; // Opcional: CC, TI, CE
+    
+    if (!numero_documento) {
+      return res.status(400).json({ 
+        error: 'Número de documento es requerido' 
+      });
+    }
+    
+    console.log(`📥 [ADRES] Consultando documento: ${numero_documento} (${tipo_documento || 'CC'})`);
+    
+    const datos = await adresService.consultarADRES(
+      numero_documento, 
+      tipo_documento || 'CC'
+    );
+    
+    if (!datos) {
+      return res.status(404).json({
+        success: false,
+        message: 'No se encontró información del paciente en ADRES. Puede ingresar los datos manualmente.',
+        datos: null
+      });
+    }
+    
+    console.log(`✅ [ADRES] Datos encontrados para documento: ${numero_documento}`);
+    res.json({
+      success: true,
+      datos: datos,
+      message: 'Datos encontrados correctamente'
+    });
+  } catch (error) {
+    console.error('❌ [ADRES] Error en endpoint:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error consultando ADRES',
+      message: error.message || 'Error desconocido al consultar datos del paciente'
+    });
   }
 });
 

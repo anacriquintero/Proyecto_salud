@@ -4,20 +4,33 @@ export interface CaracterizacionFamilia {
   numero_ficha?: string;
   zona?: string;
   territorio?: string;
+  micro_territorio?: string;
+  barrio?: string;
+  numero_personas?: number;
   estrato?: number;
   tipo_familia?: string;
   riesgo_familiar?: string;
   fecha_caracterizacion?: string;
   info_vivienda?: {
-    funcionalidad?: string[];
-    sobrecarga?: string[];
-    ecomapa?: string[];
+    familiograma?: string[]; // Ries. Biológico, Ries. Psicológico, Ries. Social
+    funcionalidad?: {
+      tipo?: string[]; // Ayuda, Conversan, Decisiones, Comparten
+      escala?: number; // 0-10
+    };
+    sobrecarga?: string; // 1. Ausencia, 2. Sobrecarga, 3. Sobrecarga intensa
+    ecomapa?: string; // 1. Positivo, 2. Tenue, 3. Estresante, 4. Energía fluye, 5. Intenso
     observaciones?: string;
     te_quiere?: boolean;
     nn_discapacidad_adulto_mayor_enfermedad?: boolean;
   };
   situaciones_proteccion?: string[];
-  condiciones_salud_publica?: string[];
+  condiciones_salud_publica?: {
+    sucesos_vitales?: boolean;
+    cuidado_salud_criticos?: boolean;
+    obtiene_alimento?: string; // CULTIVA, CRÍA, CAZERÍA, RECOLECCIÓN, TRUEQUE, COMPRA, Asis estado, OTRA
+    asis_estado?: boolean;
+    asis_estado_cual?: string;
+  };
   practicas_cuidado?: {
     hab_saludables?: boolean;
     rec_socioemoc?: boolean;
@@ -42,6 +55,9 @@ export interface CaracterizacionPaciente {
   pertenencia_etnica?: string;
   discapacidad?: string[];
   victima_violencia?: boolean;
+  telefono_1?: string;
+  orientacion_sexual?: string; // Si, No, Cuál?
+  comunidad_indigena?: boolean;
   datos_pyp?: {
     cumple_esquema_pym?: boolean;
     odont_pym?: boolean;
@@ -51,7 +67,21 @@ export interface CaracterizacionPaciente {
     vacunacion?: boolean;
     micronutientes?: boolean;
     suplementacion?: string[];
+    desparasitacion?: boolean;
+    anemia_hemog?: boolean;
+    its?: boolean;
+    t_ca_cuello?: boolean;
+    t_ca_mama?: boolean;
+    t_ca_prostata?: boolean;
+    t_ca_colon?: boolean;
     preconcepcional?: string[];
+    prenatal?: boolean;
+    curso_preparacion?: boolean;
+    ive?: boolean;
+    puerperio?: boolean;
+    recien_nacido?: boolean;
+    preparacion?: boolean;
+    educacion?: boolean;
     motivo_no_atencion_pym?: string[];
     si_es_menor_6_meses_lactancia?: boolean;
     si_es_menor_2_anos_meses_lact?: number;
@@ -65,7 +95,8 @@ export interface CaracterizacionPaciente {
     enf_ultimo_mes?: boolean;
     cuales_enf_ultimo_mes?: string;
     tto?: boolean;
-    motivo_no_atencion?: string[];
+    tiempo_cuidador?: string; // Tto. Casero, Rechazo, No afiliado, Pract. Anc, Partera, Sabedor, No aplica
+    motivo_no_atencion?: string[]; // Lugar lejano, Horario, Tiempos, etc.
   };
   creado_por_uid?: number;
   fecha_creacion?: string;
