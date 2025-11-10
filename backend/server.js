@@ -8,6 +8,8 @@ const fetch = require('node-fetch');
 const FormData = require('form-data');
 const multer = require('multer');
 const adresService = require('./services/adresService');
+const terminologyClient = require('./services/terminologyClient');
+const fhirClient = require('./services/fhirClient');
 require('dotenv').config();
 
 const app = express();
@@ -2824,6 +2826,130 @@ app.delete('/api/perfiles-autocompletado/:id', (req, res) => {
       res.json({ message: 'Perfil eliminado exitosamente' });
     }
   );
+});
+
+// ==================== TERMINOLOGY SERVICE ====================
+
+app.get('/api/terminology/cie10', async (req, res) => {
+  try {
+    const search = (req.query.query || '').trim();
+    if (!search || search.length < 2) {
+      return res.json([]);
+    }
+    const results = await terminologyClient.searchCIE10(search);
+    res.json(results.slice(0, 20));
+  } catch (error) {
+    console.error('❌ [Terminology] Error buscando CIE10:', error);
+    res.status(500).json({ error: 'Error consultando CIE10' });
+  }
+});
+
+app.get('/api/terminology/medications', async (req, res) => {
+  try {
+    const search = (req.query.query || '').trim();
+    if (!search || search.length < 2) {
+      return res.json([]);
+    }
+    const results = await terminologyClient.searchMedications(search);
+    res.json(results.slice(0, 20));
+  } catch (error) {
+    console.error('❌ [Terminology] Error buscando medicamentos:', error);
+    res.status(500).json({ error: 'Error consultando medicamentos' });
+  }
+});
+
+app.post('/api/terminology/validate', async (req, res) => {
+  const { type, valueSetUrl, system, code, display } = req.body || {};
+
+  if (!code) {
+    return res.status(400).json({ error: 'El campo code es obligatorio' });
+  }
+
+  let targetValueSet = valueSetUrl;
+  if (!targetValueSet) {
+    if (type === 'cie10') {
+      targetValueSet = terminologyClient.constants.CIE10_VALUESET_URL;
+    } else if (type === 'medication') {
+      targetValueSet = terminologyClient.constants.MEDS_VALUESET_URL;
+    }
+  }
+
+  if (!targetValueSet) {
+    return res.status(400).json({
+      error: 'Debe indicar valueSetUrl o un type válido (cie10, medication)'
+    });
+  }
+
+  try {
+    const result = await terminologyClient.validateCode({
+      valueSetUrl: targetValueSet,
+      system,
+      code,
+      display
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('❌ [Terminology] Error validando código:', error);
+    res.status(500).json({ error: 'Error validando código', details: error.message });
+  }
+});
+
+// ==================== FHIR GATEWAY ====================
+
+app.post('/api/fhir/patient', async (req, res) => {
+  const { resource, identifier } = req.body || {};
+  if (!resource) {
+    return res.status(400).json({ error: 'Falta el recurso Patient' });
+  }
+  try {
+    const response = await fhirClient.upsertPatient(resource, identifier);
+    res.json({ success: true, resource: response });
+  } catch (error) {
+    console.error('❌ [FHIR] Error creando/actualizando Patient:', error);
+    res.status(500).json({ error: 'Error enviando Patient a FHIR', details: error.message });
+  }
+});
+
+app.post('/api/fhir/condition', async (req, res) => {
+  const { resource } = req.body || {};
+  if (!resource) {
+    return res.status(400).json({ error: 'Falta el recurso Condition' });
+  }
+  try {
+    const response = await fhirClient.createCondition(resource);
+    res.json({ success: true, resource: response });
+  } catch (error) {
+    console.error('❌ [FHIR] Error creando Condition:', error);
+    res.status(500).json({ error: 'Error enviando Condition a FHIR', details: error.message });
+  }
+});
+
+app.post('/api/fhir/medication', async (req, res) => {
+  const { resource, id } = req.body || {};
+  if (!resource) {
+    return res.status(400).json({ error: 'Falta el recurso Medication' });
+  }
+  try {
+    const response = await fhirClient.createMedication(resource, id);
+    res.json({ success: true, resource: response });
+  } catch (error) {
+    console.error('❌ [FHIR] Error creando/actualizando Medication:', error);
+    res.status(500).json({ error: 'Error enviando Medication a FHIR', details: error.message });
+  }
+});
+
+app.post('/api/fhir/medication-request', async (req, res) => {
+  const { resource } = req.body || {};
+  if (!resource) {
+    return res.status(400).json({ error: 'Falta el recurso MedicationRequest' });
+  }
+  try {
+    const response = await fhirClient.createMedicationRequest(resource);
+    res.json({ success: true, resource: response });
+  } catch (error) {
+    console.error('❌ [FHIR] Error creando MedicationRequest:', error);
+    res.status(500).json({ error: 'Error enviando MedicationRequest a FHIR', details: error.message });
+  }
 });
 
 // ==================== ENDPOINT CONSULTA ADRES ====================
