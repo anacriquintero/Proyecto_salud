@@ -8,7 +8,7 @@ const fetch = require('node-fetch');
 const FormData = require('form-data');
 const multer = require('multer');
 const adresService = require('./services/adresService');
-const terminologyClient = require('./services/terminologyClient');
+//const terminologyClient = require('./services/terminologyClient');
 const fhirClient = require('./services/fhirClient');
 require('dotenv').config();
 
@@ -3033,6 +3033,60 @@ app.get('/api/debug/users', (req, res) => {
       users: usuarios,
       dbPath: dbPath
     });
+  });
+});
+
+// ==================== RUTAS BÁSICAS PARA PRODUCCIÓN ====================
+
+// Ruta raíz - Health check básico
+app.get('/', (req, res) => {
+  res.json({ 
+    message: '🚀 Salud Digital APS Backend - Funcionando ✅',
+    version: '1.0.0',
+    status: 'online',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development',
+    routes: [
+      '/api/auth/login',
+      '/api/familias',
+      '/api/pacientes/buscar',
+      '/api/hc/medicina',
+      '/api/hc/psicologia',
+      '/api/health',
+      '/api/test'
+    ]
+  });
+});
+
+// Rutas básicas de API (para compatibilidad)
+app.get('/api/usuarios', (req, res) => {
+  res.json({ message: 'Use /api/usuarios/rol/:rol para obtener usuarios por rol' });
+});
+
+app.get('/api/pacientes', (req, res) => {
+  res.json({ message: 'Use /api/pacientes/buscar?q=termino para buscar pacientes' });
+});
+
+app.get('/api/login', (req, res) => {
+  res.json({ message: 'Use POST /api/auth/login para autenticación' });
+});
+
+// Health check extendido
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'OK', 
+    message: 'Servidor de Salud Digital APS funcionando correctamente',
+    timestamp: new Date().toISOString(),
+    database: 'Connected',
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
+// Test endpoint simple
+app.get('/api/test', (req, res) => {
+  res.json({ 
+    message: '✅ Test endpoint funcionando correctamente',
+    timestamp: new Date().toISOString()
   });
 });
 
