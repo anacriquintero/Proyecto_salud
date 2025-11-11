@@ -12,6 +12,7 @@ Sistema de gestión para programas de Atención Primaria en Salud (APS) que opti
 - **Órdenes de Laboratorio** y procedimientos
 - **Dashboard Epidemiológico** y reportes
 - **Multi-rol** para diferentes profesionales de la salud
+- **Interoperabilidad HL7 FHIR** (ver `docs/INTEROPERABILIDAD_FHIR.md`)
 
 ## 🗄️ Base de Datos - Estructura Corregida ✅
 

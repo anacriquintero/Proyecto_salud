@@ -4,6 +4,9 @@ import { LoginForm } from "./components/LoginForm";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { UserProfile } from "./components/UserProfile";
 import { STTButton } from "./components/STTButton";
+import { TerminologyAutocomplete } from "./components/TerminologyAutocomplete";
+import { syncPatient, createCondition, createMedicationRequest, createMedication } from "./services/fhirService";
+import { buildPatientResource, buildConditionResources, buildMedicationRequestResources, buildMedicationResources } from "./utils/fhirMappers";
 import { ConsultarADRESButton } from "./components/ConsultarADRESButton";
 import { 
   User, 
@@ -1734,6 +1737,7 @@ function ConsultaFormView({ patient, deviceType }: any) {
   const [atencionId, setAtencionId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [guardando, setGuardando] = useState(false);
+  const [fhirSyncStatus, setFhirSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
   
   // Perfiles de autocompletado
   const [perfiles, setPerfiles] = useState<any[]>([]);
@@ -2147,13 +2151,13 @@ function ConsultaFormView({ patient, deviceType }: any) {
     try {
       setGuardando(true);
       const user = AuthService.getCurrentUser();
-      
+
       // Construir objeto de diagnósticos
       const diagnosticosObj = {
         principal: diagnosticoPrincipal,
         relacionados: diagnosticosRelacionados.filter(d => d.trim() !== '')
       };
-      
+
       const payload: any = {
         hora_consulta: horaConsulta || null,
         motivo_consulta: motivo,
@@ -2164,7 +2168,7 @@ function ConsultaFormView({ patient, deviceType }: any) {
         revision_por_sistemas: { sistemas: revisionPorSistemasSeleccion, hallazgos: revisionPorSistemasHallazgos },
         signos_vitales: null,
         examen_fisico: examenFisico,
-        diagnosticos_cie10: diagnosticosRelacionados.filter(d => d.trim() !== '').length > 0 
+        diagnosticos_cie10: diagnosticosRelacionados.filter(d => d.trim() !== '').length > 0
           ? JSON.stringify(diagnosticosObj)
           : diagnosticoPrincipal,
         plan_manejo: planManejo,
@@ -2196,25 +2200,59 @@ function ConsultaFormView({ patient, deviceType }: any) {
         fecha_hora_egreso: fechaHoraEgreso || null
       };
 
+      let nuevaAtencionId = atencionId;
+
       if (atencionId) {
-        // Actualizar HC existente
         await AuthService.updateHCMedicina(atencionId, payload);
         alert('Historia clínica actualizada exitosamente');
       } else {
-        // Crear nueva atención y HC
         if (!user?.id || !patient?.id) {
           throw new Error('Usuario o paciente no disponible');
         }
-        
+
         const resultado = await AuthService.crearHCMedicina({
           paciente_id: patient.id,
           usuario_id: user.id,
           fecha_atencion: new Date().toISOString().split('T')[0],
           ...payload
         });
-        
+
+        nuevaAtencionId = resultado.atencion_id;
         setAtencionId(resultado.atencion_id);
         alert('Nueva atención creada exitosamente');
+      }
+
+      // Sincronización HL7 FHIR
+      if (patient) {
+        setFhirSyncStatus('syncing');
+        try {
+          const { resource: patientResource, patientId: fhirPatientId } = buildPatientResource(patient);
+          const identifierValue = patient.documento || patient.numero_documento || patient.id?.toString();
+          await syncPatient(patientResource, identifierValue);
+
+          const diagnosticosTotales = [diagnosticoPrincipal, ...diagnosticosRelacionados].filter(
+            (value, index, self) => value && self.indexOf(value) === index
+          );
+
+          const conditionResources = buildConditionResources({
+            diagnosticos: diagnosticosTotales,
+            patientReference: `Patient/${fhirPatientId}`,
+            encounterId: nuevaAtencionId,
+            practitioner: {
+              id: user?.id,
+              name: user?.name || user?.nombre
+            }
+          });
+
+          if (conditionResources.length > 0) {
+            await Promise.all(conditionResources.map((resource) => createCondition(resource)));
+          }
+
+          setFhirSyncStatus('success');
+        } catch (fhirError) {
+          console.error('❌ Error sincronizando con FHIR:', fhirError);
+          setFhirSyncStatus('error');
+        }
       }
     } catch (e: any) {
       console.error('Error guardando:', e);
@@ -2239,9 +2277,20 @@ function ConsultaFormView({ patient, deviceType }: any) {
     <ResponsiveCard>
       <div className="flex items-center justify-between mb-4">
         <h4 className="font-semibold text-stone-900">Historia Clínica</h4>
-        {atencionId && (
-          <ResponsiveBadge tone="admin">Atención #{atencionId}</ResponsiveBadge>
-        )}
+        <div className="flex items-center gap-2">
+          {atencionId && (
+            <ResponsiveBadge tone="admin">Atención #{atencionId}</ResponsiveBadge>
+          )}
+          {fhirSyncStatus === 'syncing' && (
+            <ResponsiveBadge tone="admin">Sincronizando FHIR...</ResponsiveBadge>
+          )}
+          {fhirSyncStatus === 'success' && (
+            <ResponsiveBadge tone="health">FHIR actualizado</ResponsiveBadge>
+          )}
+          {fhirSyncStatus === 'error' && (
+            <ResponsiveBadge tone="critical">Error en FHIR</ResponsiveBadge>
+          )}
+        </div>
       </div>
 
       {/* Selector de perfiles de autocompletado */}
@@ -2615,17 +2664,27 @@ function ConsultaFormView({ patient, deviceType }: any) {
         <ResponsiveCard>
           <h5 className="font-medium text-stone-900 mb-3">Diagnósticos</h5>
           <ResponsiveField label="Diagnóstico principal (CIE-10)" required>
-            <ResponsiveInput placeholder="Ej: J00 - Rinofaringitis aguda" value={diagnosticoPrincipal} onChange={(e: any) => setDiagnosticoPrincipal(e.target.value)} />
+            <TerminologyAutocomplete
+              value={diagnosticoPrincipal}
+              onValueChange={setDiagnosticoPrincipal}
+              placeholder="Ej: I10 - Hipertensión esencial"
+              searchType="cie10"
+            />
           </ResponsiveField>
           <div className="mt-3 space-y-2">
             <label className="text-sm font-medium text-stone-700">Diagnósticos relacionados</label>
             {[0, 1, 2].map((idx) => (
               <ResponsiveField key={idx} label={`${idx + 1}.`}>
-                <ResponsiveInput placeholder={`CIE-10 ${idx + 1}`} value={diagnosticosRelacionados[idx]} onChange={(e: any) => {
-                  const nuevos = [...diagnosticosRelacionados];
-                  nuevos[idx] = e.target.value;
-                  setDiagnosticosRelacionados(nuevos);
-                }} />
+                <TerminologyAutocomplete
+                  value={diagnosticosRelacionados[idx]}
+                  onValueChange={(valor) => {
+                    const nuevos = [...diagnosticosRelacionados];
+                    nuevos[idx] = valor;
+                    setDiagnosticosRelacionados(nuevos);
+                  }}
+                  placeholder={`CIE-10 ${idx + 1}`}
+                  searchType="cie10"
+                />
               </ResponsiveField>
             ))}
           </div>
@@ -2742,6 +2801,8 @@ function RecetaFormView({ patient, deviceType }: any) {
   const [medicamentos, setMedicamentos] = useState<any[]>([]);
   const [nuevoMedicamento, setNuevoMedicamento] = useState({
     nombre: '',
+    codigo_invima: '',
+    codigo_atc: '',
     concentracion: '',
     forma_farmaceutica: '',
     via_administracion: '',
@@ -2760,6 +2821,7 @@ function RecetaFormView({ patient, deviceType }: any) {
   const [recetaId, setRecetaId] = useState<number | null>(null);
   const [atencionId, setAtencionId] = useState<number | null>(null);
   const [hcAsociada, setHcAsociada] = useState<any>(null);
+  const [fhirSyncStatus, setFhirSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
 
   useEffect(() => {
     const cargarRecetas = async () => {
@@ -2842,6 +2904,8 @@ function RecetaFormView({ patient, deviceType }: any) {
     setMedicamentos([...medicamentos, {
       id: nuevoId,
       nombre: nuevoMedicamento.nombre,
+      codigo_invima: nuevoMedicamento.codigo_invima,
+      codigo_atc: nuevoMedicamento.codigo_atc,
       concentracion: nuevoMedicamento.concentracion,
       forma_farmaceutica: nuevoMedicamento.forma_farmaceutica,
       via_administracion: nuevoMedicamento.via_administracion,
@@ -2853,6 +2917,8 @@ function RecetaFormView({ patient, deviceType }: any) {
     
     setNuevoMedicamento({
       nombre: '',
+      codigo_invima: '',
+      codigo_atc: '',
       concentracion: '',
       forma_farmaceutica: '',
       via_administracion: '',
@@ -2908,6 +2974,47 @@ function RecetaFormView({ patient, deviceType }: any) {
         const resultado = await AuthService.crearReceta(recetaData);
         setRecetaId(resultado.receta_id);
         alert('Receta creada exitosamente');
+      }
+
+      if (patient) {
+        setFhirSyncStatus('syncing');
+        try {
+          const { resource: patientResource, patientId: fhirPatientId } = buildPatientResource(patient);
+          const identifierValue = patient.documento || patient.numero_documento || patient.id?.toString();
+          await syncPatient(patientResource, identifierValue);
+
+          const patientReference = `Patient/${fhirPatientId}`;
+          const diagnosticosTotales = [codigoDiagnosticoPrincipal, codigoDiagnosticoRel1, codigoDiagnosticoRel2].filter(
+            (value, index, self) => value && self.indexOf(value) === index
+          );
+
+          const medicationResources = buildMedicationResources(medicamentos);
+          if (medicationResources.length > 0) {
+            await Promise.all(
+              medicationResources.map((resource: any) => createMedication(resource, resource.id))
+            );
+          }
+
+          const medicationRequests = buildMedicationRequestResources({
+            medicamentos,
+            patientReference,
+            practitioner: {
+              id: user?.id,
+              name: user?.name || user?.nombre
+            },
+            encounterId: atencionId,
+            diagnosticos: diagnosticosTotales
+          });
+
+          if (medicationRequests.length > 0) {
+            await Promise.all(medicationRequests.map((resource: any) => createMedicationRequest(resource)));
+          }
+
+          setFhirSyncStatus('success');
+        } catch (fhirError) {
+          console.error('❌ Error sincronizando receta en FHIR:', fhirError);
+          setFhirSyncStatus('error');
+        }
       }
     } catch (e: any) {
       console.error('Error guardando receta:', e);
@@ -3002,9 +3109,20 @@ ${indicaciones ? `Indicaciones:\n${indicaciones}` : ''}
     <ResponsiveCard>
       <div className="flex items-center justify-between mb-4">
         <h4 className="font-semibold text-stone-900">Recetario Digital</h4>
-        {recetaId && (
-          <ResponsiveBadge tone="admin">Receta #{recetaId}</ResponsiveBadge>
-        )}
+        <div className="flex items-center gap-2">
+          {recetaId && (
+            <ResponsiveBadge tone="admin">Receta #{recetaId}</ResponsiveBadge>
+          )}
+          {fhirSyncStatus === 'syncing' && (
+            <ResponsiveBadge tone="admin">Sincronizando FHIR...</ResponsiveBadge>
+          )}
+          {fhirSyncStatus === 'success' && (
+            <ResponsiveBadge tone="health">FHIR actualizado</ResponsiveBadge>
+          )}
+          {fhirSyncStatus === 'error' && (
+            <ResponsiveBadge tone="critical">Error en FHIR</ResponsiveBadge>
+          )}
+        </div>
       </div>
       
       {/* Datos del paciente (solo lectura) */}
@@ -3030,24 +3148,27 @@ ${indicaciones ? `Indicaciones:\n${indicaciones}` : ''}
         <h5 className="font-medium text-stone-900 mb-3">Códigos Diagnóstico</h5>
         <div className={`grid gap-3 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-3'}`}>
           <ResponsiveField label="PRINCIPAL">
-            <ResponsiveInput 
+            <TerminologyAutocomplete
               value={codigoDiagnosticoPrincipal}
-              onChange={(e: any) => setCodigoDiagnosticoPrincipal(e.target.value)}
+              onValueChange={setCodigoDiagnosticoPrincipal}
               placeholder="CIE-10 Principal"
+              searchType="cie10"
             />
           </ResponsiveField>
           <ResponsiveField label="RELACIONADO 1">
-            <ResponsiveInput 
+            <TerminologyAutocomplete
               value={codigoDiagnosticoRel1}
-              onChange={(e: any) => setCodigoDiagnosticoRel1(e.target.value)}
+              onValueChange={setCodigoDiagnosticoRel1}
               placeholder="CIE-10 Rel 1"
+              searchType="cie10"
             />
           </ResponsiveField>
           <ResponsiveField label="RELACIONADO 2">
-            <ResponsiveInput 
+            <TerminologyAutocomplete
               value={codigoDiagnosticoRel2}
-              onChange={(e: any) => setCodigoDiagnosticoRel2(e.target.value)}
+              onValueChange={setCodigoDiagnosticoRel2}
               placeholder="CIE-10 Rel 2"
+              searchType="cie10"
             />
           </ResponsiveField>
         </div>
@@ -3065,6 +3186,10 @@ ${indicaciones ? `Indicaciones:\n${indicaciones}` : ''}
               <div className="flex items-start justify-between mb-2">
                 <div className="flex-1">
                   <div className="font-medium text-stone-900">{med.nombre || 'Sin nombre'}</div>
+                  <div className="text-xs text-stone-500 mt-1 space-x-2">
+                    {med.codigo_invima && <span>Código INVIMA: {med.codigo_invima}</span>}
+                    {med.codigo_atc && <span>ATC: {med.codigo_atc}</span>}
+                  </div>
                   <div className="text-sm text-stone-600 mt-1 space-y-1">
                     {med.concentracion && <div>Concentración: {med.concentracion}</div>}
                     {med.forma_farmaceutica && <div>Forma: {med.forma_farmaceutica}</div>}
@@ -3091,10 +3216,28 @@ ${indicaciones ? `Indicaciones:\n${indicaciones}` : ''}
         <h5 className="font-medium text-stone-900 mb-3">Agregar Medicamento</h5>
         <div className="space-y-4">
           <ResponsiveField label="Medicamento" required>
-            <ResponsiveInput 
+            <TerminologyAutocomplete
               value={nuevoMedicamento.nombre}
-              onChange={(e: any) => setNuevoMedicamento({ ...nuevoMedicamento, nombre: e.target.value })}
-              placeholder="Nombre del medicamento" 
+              onValueChange={(valor) =>
+                setNuevoMedicamento({
+                  ...nuevoMedicamento,
+                  nombre: valor
+                })
+              }
+              placeholder="Buscar por nombre o código INVIMA"
+              searchType="medication"
+              onOptionSelect={(option) => {
+                const designation = option.designation?.find((d: any) =>
+                  typeof d.value === 'string' && d.value.toUpperCase().includes('ATC')
+                );
+                const atc = designation?.value?.split(' ').pop() || '';
+                setNuevoMedicamento((prev: any) => ({
+                  ...prev,
+                  nombre: `${option.code} - ${option.display}`,
+                  codigo_invima: option.code,
+                  codigo_atc: atc
+                }));
+              }}
             />
           </ResponsiveField>
           
