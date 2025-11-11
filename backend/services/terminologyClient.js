@@ -1,4 +1,4 @@
-const fetch = require('node-fetch');
+﻿const fetch = require('node-fetch');
 const { SimpleCache } = require('../utils/simpleCache');
 const localTerminology = require('./terminologyLocal');
 
@@ -18,6 +18,12 @@ function buildExpandUrl(valueSetUrl, filter, count = DEFAULT_COUNT) {
     count: String(count)
   });
   return `${BASE_URL}/ValueSet/$expand?${params.toString()}`;
+}
+
+function localFallback(valueSetUrl, filter, count = DEFAULT_COUNT) {
+  return valueSetUrl === CIE10_VALUESET_URL
+    ? localTerminology.searchCIE10(filter, count)
+    : localTerminology.searchMedications(filter, count);
 }
 
 async function fetchValueSet(valueSetUrl, filter) {
@@ -53,26 +59,45 @@ async function fetchValueSet(valueSetUrl, filter) {
 
   try {
     const entries = await attemptRemote();
-    console.log(`[Terminology] Remoto ${valueSetUrl} -> ${entries.length} resultados para "${filter}"`);
-    cache.set(cacheKey, entries);
-    return entries;
+    if (entries.length > 0) {
+      console.log(
+        `[Terminology] Remoto ${valueSetUrl} -> ${entries.length} resultados para "${filter}"`
+      );
+      cache.set(cacheKey, entries);
+      return entries;
+    }
+    console.warn(
+      `[Terminology] Remoto ${valueSetUrl} sin resultados para "${filter}". Se usará fallback local.`
+    );
+    const fallback = localFallback(valueSetUrl, filter, DEFAULT_COUNT);
+    cache.set(cacheKey, fallback);
+    return fallback;
   } catch (error) {
-    console.warn(`[Terminology] Error remoto (${valueSetUrl}): ${error.message}. Se usará fallback local.`);
-    const fallback =
-      valueSetUrl === CIE10_VALUESET_URL
-        ? localTerminology.searchCIE10(filter, DEFAULT_COUNT)
-        : localTerminology.searchMedications(filter, DEFAULT_COUNT);
+    console.warn(
+      `[Terminology] Error remoto (${valueSetUrl}): ${error.message}. Se usará fallback local.`
+    );
+    const fallback = localFallback(valueSetUrl, filter, DEFAULT_COUNT);
     cache.set(cacheKey, fallback);
     return fallback;
   }
 }
 
 async function searchCIE10(query) {
-  return fetchValueSet(CIE10_VALUESET_URL, query);
+  if (!query || query.length < 2) {
+    return [];
+  }
+  const results = localTerminology.searchCIE10(query, DEFAULT_COUNT);
+  console.log(`[Terminology][Local] CIE10 -> ${results.length} resultados para "${query}"`);
+  return results;
 }
 
 async function searchMedications(query) {
-  return fetchValueSet(MEDS_VALUESET_URL, query);
+  if (!query || query.length < 2) {
+    return [];
+  }
+  const results = localTerminology.searchMedications(query, DEFAULT_COUNT);
+  console.log(`[Terminology][Local] Medicamentos -> ${results.length} resultados para "${query}"`);
+  return results;
 }
 
 async function validateCode({ valueSetUrl, system, code, display }) {
@@ -122,4 +147,3 @@ module.exports = {
     MEDS_VALUESET_URL
   }
 };
-
