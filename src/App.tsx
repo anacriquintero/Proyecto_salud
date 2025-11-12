@@ -2240,7 +2240,7 @@ function ConsultaFormView({ patient, deviceType }: any) {
             encounterId: nuevaAtencionId,
             practitioner: {
               id: user?.id,
-              name: user?.name || user?.nombre
+              name: user?.name || (user as any)?.nombre
             }
           });
 
@@ -3000,7 +3000,7 @@ function RecetaFormView({ patient, deviceType }: any) {
             patientReference,
             practitioner: {
               id: user?.id,
-              name: user?.name || user?.nombre
+              name: user?.name || (user as any)?.nombre
             },
             encounterId: atencionId,
             diagnosticos: diagnosticosTotales
@@ -4030,7 +4030,7 @@ function BDPacientesView({ deviceType, onSelectPaciente }: any) {
   const [resultados, setResultados] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<any>(null);
-  const searchTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const searchTimeoutRef = React.useRef<any>(null);
   
   const handleSelectPaciente = async (paciente: any) => {
     try {
