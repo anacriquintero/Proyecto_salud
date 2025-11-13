@@ -10,6 +10,7 @@ const multer = require('multer');
 const adresService = require('./services/adresService');
 const terminologyClient = require('./services/terminologyClient');
 const fhirClient = require('./services/fhirClient');
+const aiService = require('./services/aiService');
 require('dotenv').config();
 
 const app = express();
@@ -3324,6 +3325,103 @@ app.get('/api/health', (req, res) => {
     database: 'Connected',
     environment: process.env.NODE_ENV || 'development'
   });
+});
+
+// ==================== ENDPOINTS DE INTELIGENCIA ARTIFICIAL ====================
+
+// POST: Predecir riesgo de stroke
+app.post('/api/ai/predict/stroke', async (req, res) => {
+  try {
+    const patientData = req.body;
+    
+    console.log('🤖 [AI] Predicción de stroke solicitada:', {
+      age: patientData.age,
+      gender: patientData.gender,
+      hasVitals: !!(patientData.tensionSistolica || patientData.glucometria),
+      hasAntecedentes: !!patientData.antecedentesPersonales,
+      hasTerritorio: !!patientData.territorio,
+      hasOcupacion: !!patientData.ocupacion
+    });
+
+    const result = await aiService.predictStrokeRisk(patientData);
+    
+    if (result.success) {
+      console.log('✅ [AI] Predicción exitosa:', {
+        riskLevel: result.risk_level,
+        probability: result.probability
+      });
+      res.json(result);
+    } else {
+      console.error('❌ [AI] Error en predicción:', result.error);
+      console.error('❌ [AI] Detalles del error:', result.details);
+      // Devolver 400 para errores de validación, 500 para errores del servidor
+      const statusCode = result.error && result.error.includes('Faltan campos') ? 400 : 500;
+      res.status(statusCode).json(result);
+    }
+  } catch (error) {
+    console.error('❌ [AI] Error en endpoint predict/stroke:', error);
+    console.error('❌ [AI] Error message:', error.message);
+    console.error('❌ [AI] Error stack:', error.stack);
+    
+    // En desarrollo, incluir más detalles del error
+    const isDevelopment = process.env.NODE_ENV !== 'production';
+    res.status(500).json({
+      success: false,
+      error: 'Error interno del servidor',
+      details: isDevelopment ? error.message : 'Error al procesar la solicitud',
+      stack: isDevelopment ? error.stack : undefined
+    });
+  }
+});
+
+// GET: Sugerir diagnósticos basados en síntomas (placeholder)
+app.get('/api/ai/suggest/diagnosis', async (req, res) => {
+  try {
+    const { symptoms, patientData } = req.query;
+    
+    if (!symptoms) {
+      return res.status(400).json({
+        success: false,
+        error: 'Parámetro "symptoms" es requerido'
+      });
+    }
+
+    const patientDataObj = patientData ? JSON.parse(patientData) : {};
+    const result = await aiService.suggestDiagnosis(symptoms, patientDataObj);
+    
+    res.json(result);
+  } catch (error) {
+    console.error('❌ [AI] Error en endpoint suggest/diagnosis:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error interno del servidor',
+      details: error.message
+    });
+  }
+});
+
+// POST: Generar resumen automático de consulta (placeholder)
+app.post('/api/ai/generate/summary', async (req, res) => {
+  try {
+    const { clinicalNotes } = req.body;
+    
+    if (!clinicalNotes) {
+      return res.status(400).json({
+        success: false,
+        error: 'Campo "clinicalNotes" es requerido'
+      });
+    }
+
+    const result = await aiService.generateSummary(clinicalNotes);
+    res.json(result);
+  } catch (error) {
+    console.error('❌ [AI] Error en endpoint generate/summary:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error interno del servidor',
+      details: error.message
+    });
+  }
 });
 
 // Test endpoint simple

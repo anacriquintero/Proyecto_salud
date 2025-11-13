@@ -4,6 +4,9 @@ import { LoginForm } from "./components/LoginForm";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { UserProfile } from "./components/UserProfile";
 import { STTButton } from "./components/STTButton";
+import { RiskBadge } from "./components/RiskBadge";
+import { AISuggestionsPanel } from "./components/AISuggestionsPanel";
+import { predictStrokeRisk, type StrokePredictionResponse } from "./services/aiService";
 import { TerminologyAutocomplete } from "./components/TerminologyAutocomplete";
 import { syncPatient, createCondition, createMedicationRequest, createMedication } from "./services/fhirService";
 import { buildPatientResource, buildConditionResources, buildMedicationRequestResources, buildMedicationResources } from "./utils/fhirMappers";
@@ -1739,6 +1742,10 @@ function ConsultaFormView({ patient, deviceType }: any) {
   const [guardando, setGuardando] = useState(false);
   const [fhirSyncStatus, setFhirSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
   
+  // Estados para predicción de stroke
+  const [strokePrediction, setStrokePrediction] = useState<StrokePredictionResponse | null>(null);
+  const [analizandoRiesgo, setAnalizandoRiesgo] = useState(false);
+  
   // Perfiles de autocompletado
   const [perfiles, setPerfiles] = useState<any[]>([]);
   const [perfilSeleccionado, setPerfilSeleccionado] = useState<number | null>(null);
@@ -1977,6 +1984,111 @@ function ConsultaFormView({ patient, deviceType }: any) {
       setImc('');
     }
   }, [peso, talla]);
+
+  // Función para analizar riesgo de stroke
+  const analizarRiesgoStroke = async () => {
+    if (!patient) {
+      alert('No hay información del paciente disponible');
+      return;
+    }
+
+    try {
+      setAnalizandoRiesgo(true);
+      setStrokePrediction(null);
+
+      // Calcular edad si no está disponible
+      let edadCalculada = patient.edad;
+      if (!edadCalculada && patient.fecha_nacimiento) {
+        const hoy = new Date();
+        const nacimiento = new Date(patient.fecha_nacimiento);
+        let edad = hoy.getFullYear() - nacimiento.getFullYear();
+        const mesDiff = hoy.getMonth() - nacimiento.getMonth();
+        if (mesDiff < 0 || (mesDiff === 0 && hoy.getDate() < nacimiento.getDate())) {
+          edad--;
+        }
+        edadCalculada = edad;
+      }
+
+      // Obtener datos adicionales: territorio y ocupación
+      let territorio = '';
+      let ocupacion = '';
+      
+      try {
+        // Obtener familia para territorio
+        if (patient.familia_id) {
+          const familia = await AuthService.getFamiliaPorId(patient.familia_id);
+          territorio = familia?.territorio || '';
+        }
+        
+        // Obtener caracterización para ocupación
+        if (patient.familia_id) {
+          const caracterizacion = await AuthService.getCaracterizacionFamilia(patient.familia_id);
+          if (caracterizacion?.integrantes) {
+            const pacienteCaracterizacion = caracterizacion.integrantes.find(
+              (p: any) => p.paciente_id === patient.id
+            );
+            ocupacion = pacienteCaracterizacion?.ocupacion || '';
+          }
+        }
+      } catch (error) {
+        console.warn('⚠️ No se pudieron obtener datos adicionales (territorio/ocupación):', error);
+        // Continuar con valores por defecto
+      }
+
+      // Detectar tabaquismo desde antecedentes tóxicos
+      const toxicologicos = typeof antecedentesPersonales === 'object' 
+        ? (antecedentesPersonales.toxicologicos || '')
+        : '';
+      
+      let smokingStatus = 'never smoked'; // Default
+      if (toxicologicos) {
+        const toxicLower = toxicologicos.toLowerCase();
+        if (toxicLower.includes('fuma') || toxicLower.includes('tabaco') || toxicLower.includes('cigarrillo')) {
+          if (toxicLower.includes('ex') || toxicLower.includes('dejó') || toxicLower.includes('dejo')) {
+            smokingStatus = 'formerly smoked';
+          } else {
+            smokingStatus = 'smokes';
+          }
+        }
+      }
+
+      // Preparar datos del paciente para la predicción
+      const patientData = {
+        age: edadCalculada || 50, // Default 50 si no hay edad
+        gender: patient.genero || patient.sexo,
+        estadoCivil: estadoCivil,
+        tensionSistolica: tensionSistolica,
+        tensionDiastolica: tensionDiastolica,
+        frecuenciaCardiaca: frecuenciaCardiaca,
+        peso: peso,
+        talla: talla,
+        imc: imc,
+        glucometria: glucometria,
+        antecedentesPersonales: antecedentesPersonales,
+        antecedentesFamiliares: antecedentesFamiliares,
+        revisionPorSistemas: revisionPorSistemasHallazgos,
+        // Datos adicionales
+        territorio: territorio,
+        ocupacion: ocupacion,
+        smokingStatus: smokingStatus
+      };
+
+      console.log('🤖 Analizando riesgo de stroke con datos:', patientData);
+      const result = await predictStrokeRisk(patientData);
+      console.log('✅ Resultado de predicción:', result);
+      
+      setStrokePrediction(result);
+    } catch (error: any) {
+      console.error('❌ Error analizando riesgo de stroke:', error);
+      alert(`Error al analizar riesgo: ${error.message || 'Error desconocido'}`);
+      setStrokePrediction({
+        success: false,
+        error: error.message || 'Error desconocido'
+      });
+    } finally {
+      setAnalizandoRiesgo(false);
+    }
+  };
 
   // Cargar HC existente o crear nueva
   useEffect(() => {
@@ -2659,6 +2771,49 @@ function ConsultaFormView({ patient, deviceType }: any) {
             <ResponsiveField label="Temperatura (°C)">
               <ResponsiveInput type="number" step="0.1" value={temperatura} onChange={(e: any) => setTemperatura(e.target.value)} placeholder="36.5" />
             </ResponsiveField>
+          </div>
+          
+          {/* Botón y resultado de análisis de riesgo de stroke */}
+          <div className="mt-4 pt-4 border-t border-stone-200">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h6 className="font-medium text-stone-900 mb-1">Análisis de Riesgo de Stroke (IA)</h6>
+                <p className="text-xs text-stone-500">Predicción basada en datos del paciente</p>
+              </div>
+              <ResponsiveButton
+                variant="primary"
+                size="sm"
+                onClick={analizarRiesgoStroke}
+                disabled={analizandoRiesgo || !patient}
+              >
+                {analizandoRiesgo ? 'Analizando...' : 'Analizar Riesgo'}
+              </ResponsiveButton>
+            </div>
+            
+            {strokePrediction && strokePrediction.success && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-stone-600">Resultado:</span>
+                  <RiskBadge 
+                    riskLevel={strokePrediction.risk_level || 'low'} 
+                    probability={strokePrediction.probability || 0}
+                  />
+                </div>
+                
+                {strokePrediction.recommendations && strokePrediction.recommendations.length > 0 && (
+                  <AISuggestionsPanel
+                    recommendations={strokePrediction.recommendations}
+                    riskLevel={strokePrediction.risk_level || 'low'}
+                  />
+                )}
+              </div>
+            )}
+            
+            {strokePrediction && !strokePrediction.success && (
+              <div className="text-sm text-red-600 bg-red-50 p-2 rounded">
+                ⚠️ {strokePrediction.error || 'Error al analizar riesgo'}
+              </div>
+            )}
           </div>
         </ResponsiveCard>
 
