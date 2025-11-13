@@ -8,8 +8,9 @@ const fetch = require('node-fetch');
 const FormData = require('form-data');
 const multer = require('multer');
 const adresService = require('./services/adresService');
-//const terminologyClient = require('./services/terminologyClient');
+const terminologyClient = require('./services/terminologyClient');
 const fhirClient = require('./services/fhirClient');
+const aiService = require('./services/aiService');
 require('dotenv').config();
 
 const app = express();
@@ -2952,6 +2953,250 @@ app.post('/api/fhir/medication-request', async (req, res) => {
   }
 });
 
+// ==================== FHIR READ OPERATIONS ====================
+
+app.get('/api/fhir/patient/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const response = await fhirClient.readPatient(id);
+    res.json({ success: true, resource: response });
+  } catch (error) {
+    console.error('❌ [FHIR] Error leyendo Patient:', error);
+    if (error.message.includes('404')) {
+      res.status(404).json({ error: 'Patient no encontrado', details: error.message });
+    } else {
+      res.status(500).json({ error: 'Error leyendo Patient desde FHIR', details: error.message });
+    }
+  }
+});
+
+app.get('/api/fhir/condition/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const response = await fhirClient.readCondition(id);
+    res.json({ success: true, resource: response });
+  } catch (error) {
+    console.error('❌ [FHIR] Error leyendo Condition:', error);
+    if (error.message.includes('404')) {
+      res.status(404).json({ error: 'Condition no encontrado', details: error.message });
+    } else {
+      res.status(500).json({ error: 'Error leyendo Condition desde FHIR', details: error.message });
+    }
+  }
+});
+
+app.get('/api/fhir/medication/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const response = await fhirClient.readMedication(id);
+    res.json({ success: true, resource: response });
+  } catch (error) {
+    console.error('❌ [FHIR] Error leyendo Medication:', error);
+    if (error.message.includes('404')) {
+      res.status(404).json({ error: 'Medication no encontrado', details: error.message });
+    } else {
+      res.status(500).json({ error: 'Error leyendo Medication desde FHIR', details: error.message });
+    }
+  }
+});
+
+app.get('/api/fhir/medication-request/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const response = await fhirClient.readMedicationRequest(id);
+    res.json({ success: true, resource: response });
+  } catch (error) {
+    console.error('❌ [FHIR] Error leyendo MedicationRequest:', error);
+    if (error.message.includes('404')) {
+      res.status(404).json({ error: 'MedicationRequest no encontrado', details: error.message });
+    } else {
+      res.status(500).json({ error: 'Error leyendo MedicationRequest desde FHIR', details: error.message });
+    }
+  }
+});
+
+// ==================== FHIR UPDATE OPERATIONS ====================
+
+app.put('/api/fhir/patient/:id', async (req, res) => {
+  const { resource } = req.body || {};
+  if (!resource) {
+    return res.status(400).json({ error: 'Falta el recurso Patient' });
+  }
+  try {
+    const { id } = req.params;
+    const response = await fhirClient.updatePatient(id, resource);
+    res.json({ success: true, resource: response });
+  } catch (error) {
+    console.error('❌ [FHIR] Error actualizando Patient:', error);
+    res.status(500).json({ error: 'Error actualizando Patient en FHIR', details: error.message });
+  }
+});
+
+app.put('/api/fhir/condition/:id', async (req, res) => {
+  const { resource } = req.body || {};
+  if (!resource) {
+    return res.status(400).json({ error: 'Falta el recurso Condition' });
+  }
+  try {
+    const { id } = req.params;
+    const response = await fhirClient.updateCondition(id, resource);
+    res.json({ success: true, resource: response });
+  } catch (error) {
+    console.error('❌ [FHIR] Error actualizando Condition:', error);
+    res.status(500).json({ error: 'Error actualizando Condition en FHIR', details: error.message });
+  }
+});
+
+app.put('/api/fhir/medication/:id', async (req, res) => {
+  const { resource } = req.body || {};
+  if (!resource) {
+    return res.status(400).json({ error: 'Falta el recurso Medication' });
+  }
+  try {
+    const { id } = req.params;
+    const response = await fhirClient.updateMedication(id, resource);
+    res.json({ success: true, resource: response });
+  } catch (error) {
+    console.error('❌ [FHIR] Error actualizando Medication:', error);
+    res.status(500).json({ error: 'Error actualizando Medication en FHIR', details: error.message });
+  }
+});
+
+app.put('/api/fhir/medication-request/:id', async (req, res) => {
+  const { resource } = req.body || {};
+  if (!resource) {
+    return res.status(400).json({ error: 'Falta el recurso MedicationRequest' });
+  }
+  try {
+    const { id } = req.params;
+    const response = await fhirClient.updateMedicationRequest(id, resource);
+    res.json({ success: true, resource: response });
+  } catch (error) {
+    console.error('❌ [FHIR] Error actualizando MedicationRequest:', error);
+    res.status(500).json({ error: 'Error actualizando MedicationRequest en FHIR', details: error.message });
+  }
+});
+
+// ==================== FHIR DELETE OPERATIONS ====================
+
+app.delete('/api/fhir/patient/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await fhirClient.deletePatient(id);
+    res.json({ success: true, message: 'Patient eliminado correctamente' });
+  } catch (error) {
+    console.error('❌ [FHIR] Error eliminando Patient:', error);
+    if (error.message.includes('404')) {
+      res.status(404).json({ error: 'Patient no encontrado', details: error.message });
+    } else {
+      res.status(500).json({ error: 'Error eliminando Patient desde FHIR', details: error.message });
+    }
+  }
+});
+
+app.delete('/api/fhir/condition/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await fhirClient.deleteCondition(id);
+    res.json({ success: true, message: 'Condition eliminado correctamente' });
+  } catch (error) {
+    console.error('❌ [FHIR] Error eliminando Condition:', error);
+    if (error.message.includes('404')) {
+      res.status(404).json({ error: 'Condition no encontrado', details: error.message });
+    } else {
+      res.status(500).json({ error: 'Error eliminando Condition desde FHIR', details: error.message });
+    }
+  }
+});
+
+app.delete('/api/fhir/medication/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await fhirClient.deleteMedication(id);
+    res.json({ success: true, message: 'Medication eliminado correctamente' });
+  } catch (error) {
+    console.error('❌ [FHIR] Error eliminando Medication:', error);
+    if (error.message.includes('404')) {
+      res.status(404).json({ error: 'Medication no encontrado', details: error.message });
+    } else {
+      res.status(500).json({ error: 'Error eliminando Medication desde FHIR', details: error.message });
+    }
+  }
+});
+
+app.delete('/api/fhir/medication-request/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await fhirClient.deleteMedicationRequest(id);
+    res.json({ success: true, message: 'MedicationRequest eliminado correctamente' });
+  } catch (error) {
+    console.error('❌ [FHIR] Error eliminando MedicationRequest:', error);
+    if (error.message.includes('404')) {
+      res.status(404).json({ error: 'MedicationRequest no encontrado', details: error.message });
+    } else {
+      res.status(500).json({ error: 'Error eliminando MedicationRequest desde FHIR', details: error.message });
+    }
+  }
+});
+
+// ==================== FHIR SEARCH OPERATIONS ====================
+
+app.get('/api/fhir/patient', async (req, res) => {
+  try {
+    const queryParams = req.query;
+    const response = await fhirClient.searchPatients(queryParams);
+    res.json({ success: true, bundle: response });
+  } catch (error) {
+    console.error('❌ [FHIR] Error buscando Patients:', error);
+    res.status(500).json({ error: 'Error buscando Patients en FHIR', details: error.message });
+  }
+});
+
+app.get('/api/fhir/condition', async (req, res) => {
+  try {
+    const queryParams = req.query;
+    const response = await fhirClient.searchConditions(queryParams);
+    res.json({ success: true, bundle: response });
+  } catch (error) {
+    console.error('❌ [FHIR] Error buscando Conditions:', error);
+    res.status(500).json({ error: 'Error buscando Conditions en FHIR', details: error.message });
+  }
+});
+
+app.get('/api/fhir/medication', async (req, res) => {
+  try {
+    const queryParams = req.query;
+    const response = await fhirClient.searchMedications(queryParams);
+    res.json({ success: true, bundle: response });
+  } catch (error) {
+    console.error('❌ [FHIR] Error buscando Medications:', error);
+    res.status(500).json({ error: 'Error buscando Medications en FHIR', details: error.message });
+  }
+});
+
+app.get('/api/fhir/medication-request', async (req, res) => {
+  try {
+    const queryParams = req.query;
+    const response = await fhirClient.searchMedicationRequests(queryParams);
+    res.json({ success: true, bundle: response });
+  } catch (error) {
+    console.error('❌ [FHIR] Error buscando MedicationRequests:', error);
+    res.status(500).json({ error: 'Error buscando MedicationRequests en FHIR', details: error.message });
+  }
+});
+
+// ==================== FHIR METADATA ====================
+
+app.get('/api/fhir/metadata', async (req, res) => {
+  try {
+    const response = await fhirClient.getCapabilityStatement();
+    res.json({ success: true, capabilityStatement: response });
+  } catch (error) {
+    console.error('❌ [FHIR] Error obteniendo CapabilityStatement:', error);
+    res.status(500).json({ error: 'Error obteniendo CapabilityStatement desde FHIR', details: error.message });
+  }
+});
+
 // ==================== ENDPOINT CONSULTA ADRES ====================
 
 // GET: Consultar datos de paciente desde ADRES por número de documento
@@ -3080,6 +3325,103 @@ app.get('/api/health', (req, res) => {
     database: 'Connected',
     environment: process.env.NODE_ENV || 'development'
   });
+});
+
+// ==================== ENDPOINTS DE INTELIGENCIA ARTIFICIAL ====================
+
+// POST: Predecir riesgo de stroke
+app.post('/api/ai/predict/stroke', async (req, res) => {
+  try {
+    const patientData = req.body;
+    
+    console.log('🤖 [AI] Predicción de stroke solicitada:', {
+      age: patientData.age,
+      gender: patientData.gender,
+      hasVitals: !!(patientData.tensionSistolica || patientData.glucometria),
+      hasAntecedentes: !!patientData.antecedentesPersonales,
+      hasTerritorio: !!patientData.territorio,
+      hasOcupacion: !!patientData.ocupacion
+    });
+
+    const result = await aiService.predictStrokeRisk(patientData);
+    
+    if (result.success) {
+      console.log('✅ [AI] Predicción exitosa:', {
+        riskLevel: result.risk_level,
+        probability: result.probability
+      });
+      res.json(result);
+    } else {
+      console.error('❌ [AI] Error en predicción:', result.error);
+      console.error('❌ [AI] Detalles del error:', result.details);
+      // Devolver 400 para errores de validación, 500 para errores del servidor
+      const statusCode = result.error && result.error.includes('Faltan campos') ? 400 : 500;
+      res.status(statusCode).json(result);
+    }
+  } catch (error) {
+    console.error('❌ [AI] Error en endpoint predict/stroke:', error);
+    console.error('❌ [AI] Error message:', error.message);
+    console.error('❌ [AI] Error stack:', error.stack);
+    
+    // En desarrollo, incluir más detalles del error
+    const isDevelopment = process.env.NODE_ENV !== 'production';
+    res.status(500).json({
+      success: false,
+      error: 'Error interno del servidor',
+      details: isDevelopment ? error.message : 'Error al procesar la solicitud',
+      stack: isDevelopment ? error.stack : undefined
+    });
+  }
+});
+
+// GET: Sugerir diagnósticos basados en síntomas (placeholder)
+app.get('/api/ai/suggest/diagnosis', async (req, res) => {
+  try {
+    const { symptoms, patientData } = req.query;
+    
+    if (!symptoms) {
+      return res.status(400).json({
+        success: false,
+        error: 'Parámetro "symptoms" es requerido'
+      });
+    }
+
+    const patientDataObj = patientData ? JSON.parse(patientData) : {};
+    const result = await aiService.suggestDiagnosis(symptoms, patientDataObj);
+    
+    res.json(result);
+  } catch (error) {
+    console.error('❌ [AI] Error en endpoint suggest/diagnosis:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error interno del servidor',
+      details: error.message
+    });
+  }
+});
+
+// POST: Generar resumen automático de consulta (placeholder)
+app.post('/api/ai/generate/summary', async (req, res) => {
+  try {
+    const { clinicalNotes } = req.body;
+    
+    if (!clinicalNotes) {
+      return res.status(400).json({
+        success: false,
+        error: 'Campo "clinicalNotes" es requerido'
+      });
+    }
+
+    const result = await aiService.generateSummary(clinicalNotes);
+    res.json(result);
+  } catch (error) {
+    console.error('❌ [AI] Error en endpoint generate/summary:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error interno del servidor',
+      details: error.message
+    });
+  }
 });
 
 // Test endpoint simple

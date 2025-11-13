@@ -4,6 +4,9 @@ import { LoginForm } from "./components/LoginForm";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { UserProfile } from "./components/UserProfile";
 import { STTButton } from "./components/STTButton";
+import { RiskBadge } from "./components/RiskBadge";
+import { AISuggestionsPanel } from "./components/AISuggestionsPanel";
+import { predictStrokeRisk, type StrokePredictionResponse } from "./services/aiService";
 import { TerminologyAutocomplete } from "./components/TerminologyAutocomplete";
 import { syncPatient, createCondition, createMedicationRequest, createMedication } from "./services/fhirService";
 import { buildPatientResource, buildConditionResources, buildMedicationRequestResources, buildMedicationResources } from "./utils/fhirMappers";
@@ -1739,6 +1742,10 @@ function ConsultaFormView({ patient, deviceType }: any) {
   const [guardando, setGuardando] = useState(false);
   const [fhirSyncStatus, setFhirSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
   
+  // Estados para predicción de stroke
+  const [strokePrediction, setStrokePrediction] = useState<StrokePredictionResponse | null>(null);
+  const [analizandoRiesgo, setAnalizandoRiesgo] = useState(false);
+  
   // Perfiles de autocompletado
   const [perfiles, setPerfiles] = useState<any[]>([]);
   const [perfilSeleccionado, setPerfilSeleccionado] = useState<number | null>(null);
@@ -1978,6 +1985,111 @@ function ConsultaFormView({ patient, deviceType }: any) {
     }
   }, [peso, talla]);
 
+  // Función para analizar riesgo de stroke
+  const analizarRiesgoStroke = async () => {
+    if (!patient) {
+      alert('No hay información del paciente disponible');
+      return;
+    }
+
+    try {
+      setAnalizandoRiesgo(true);
+      setStrokePrediction(null);
+
+      // Calcular edad si no está disponible
+      let edadCalculada = patient.edad;
+      if (!edadCalculada && patient.fecha_nacimiento) {
+        const hoy = new Date();
+        const nacimiento = new Date(patient.fecha_nacimiento);
+        let edad = hoy.getFullYear() - nacimiento.getFullYear();
+        const mesDiff = hoy.getMonth() - nacimiento.getMonth();
+        if (mesDiff < 0 || (mesDiff === 0 && hoy.getDate() < nacimiento.getDate())) {
+          edad--;
+        }
+        edadCalculada = edad;
+      }
+
+      // Obtener datos adicionales: territorio y ocupación
+      let territorio = '';
+      let ocupacion = '';
+      
+      try {
+        // Obtener familia para territorio
+        if (patient.familia_id) {
+          const familia = await AuthService.getFamiliaPorId(patient.familia_id);
+          territorio = familia?.territorio || '';
+        }
+        
+        // Obtener caracterización para ocupación
+        if (patient.familia_id) {
+          const caracterizacion = await AuthService.getCaracterizacionFamilia(patient.familia_id);
+          if (caracterizacion?.integrantes) {
+            const pacienteCaracterizacion = caracterizacion.integrantes.find(
+              (p: any) => p.paciente_id === patient.id
+            );
+            ocupacion = pacienteCaracterizacion?.ocupacion || '';
+          }
+        }
+      } catch (error) {
+        console.warn('⚠️ No se pudieron obtener datos adicionales (territorio/ocupación):', error);
+        // Continuar con valores por defecto
+      }
+
+      // Detectar tabaquismo desde antecedentes tóxicos
+      const toxicologicos = typeof antecedentesPersonales === 'object' 
+        ? (antecedentesPersonales.toxicologicos || '')
+        : '';
+      
+      let smokingStatus = 'never smoked'; // Default
+      if (toxicologicos) {
+        const toxicLower = toxicologicos.toLowerCase();
+        if (toxicLower.includes('fuma') || toxicLower.includes('tabaco') || toxicLower.includes('cigarrillo')) {
+          if (toxicLower.includes('ex') || toxicLower.includes('dejó') || toxicLower.includes('dejo')) {
+            smokingStatus = 'formerly smoked';
+          } else {
+            smokingStatus = 'smokes';
+          }
+        }
+      }
+
+      // Preparar datos del paciente para la predicción
+      const patientData = {
+        age: edadCalculada || 50, // Default 50 si no hay edad
+        gender: patient.genero || patient.sexo,
+        estadoCivil: estadoCivil,
+        tensionSistolica: tensionSistolica,
+        tensionDiastolica: tensionDiastolica,
+        frecuenciaCardiaca: frecuenciaCardiaca,
+        peso: peso,
+        talla: talla,
+        imc: imc,
+        glucometria: glucometria,
+        antecedentesPersonales: antecedentesPersonales,
+        antecedentesFamiliares: antecedentesFamiliares,
+        revisionPorSistemas: revisionPorSistemasHallazgos,
+        // Datos adicionales
+        territorio: territorio,
+        ocupacion: ocupacion,
+        smokingStatus: smokingStatus
+      };
+
+      console.log('🤖 Analizando riesgo de stroke con datos:', patientData);
+      const result = await predictStrokeRisk(patientData);
+      console.log('✅ Resultado de predicción:', result);
+      
+      setStrokePrediction(result);
+    } catch (error: any) {
+      console.error('❌ Error analizando riesgo de stroke:', error);
+      alert(`Error al analizar riesgo: ${error.message || 'Error desconocido'}`);
+      setStrokePrediction({
+        success: false,
+        error: error.message || 'Error desconocido'
+      });
+    } finally {
+      setAnalizandoRiesgo(false);
+    }
+  };
+
   // Cargar HC existente o crear nueva
   useEffect(() => {
     const cargarHC = async () => {
@@ -2035,18 +2147,39 @@ function ConsultaFormView({ patient, deviceType }: any) {
             // Revisión por sistemas
             if (hcCompleta.revision_por_sistemas) {
               try {
-                const revSistemas = typeof hcCompleta.revision_por_sistemas === 'string'
-                  ? JSON.parse(hcCompleta.revision_por_sistemas)
-                  : hcCompleta.revision_por_sistemas;
-                
-                if (revSistemas.sistemas) {
-                  setRevisionPorSistemasSeleccion(revSistemas.sistemas);
+                let revSistemas;
+                if (typeof hcCompleta.revision_por_sistemas === 'string') {
+                  // Intentar parsear si es string
+                  const trimmed = hcCompleta.revision_por_sistemas.trim();
+                  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+                    // Parece JSON válido, intentar parsear
+                    try {
+                      revSistemas = JSON.parse(trimmed);
+                    } catch (parseError) {
+                      // No es JSON válido, ignorar silenciosamente
+                      revSistemas = null;
+                    }
+                  } else {
+                    // No es JSON, ignorar
+                    revSistemas = null;
+                  }
+                } else if (typeof hcCompleta.revision_por_sistemas === 'object' && hcCompleta.revision_por_sistemas !== null) {
+                  // Ya es un objeto
+                  revSistemas = hcCompleta.revision_por_sistemas;
                 }
-                if (revSistemas.hallazgos) {
-                  setRevisionPorSistemasHallazgos(revSistemas.hallazgos);
+                
+                // Verificar que revSistemas es un objeto válido
+                if (revSistemas && typeof revSistemas === 'object' && !Array.isArray(revSistemas)) {
+                  if (revSistemas.sistemas) {
+                    setRevisionPorSistemasSeleccion(revSistemas.sistemas);
+                  }
+                  if (revSistemas.hallazgos) {
+                    setRevisionPorSistemasHallazgos(revSistemas.hallazgos);
+                  }
                 }
               } catch (e) {
-                console.error('Error parseando revisión por sistemas:', e);
+                // Error silencioso - no es crítico si no se puede cargar la revisión por sistemas
+                console.debug('No se pudo cargar revisión por sistemas:', e);
               }
             }
             
@@ -2223,17 +2356,29 @@ function ConsultaFormView({ patient, deviceType }: any) {
       }
 
       // Sincronización HL7 FHIR
+      console.log('🔍 Verificando sincronización FHIR...', { 
+        hasPatient: !!patient, 
+        patientId: patient?.id,
+        diagnosticoPrincipal: diagnosticoPrincipal 
+      });
+      
       if (patient) {
+        console.log('🔄 Iniciando sincronización FHIR...');
         setFhirSyncStatus('syncing');
+        
         try {
           const { resource: patientResource, patientId: fhirPatientId } = buildPatientResource(patient);
           const identifierValue = patient.documento || patient.numero_documento || patient.id?.toString();
-          await syncPatient(patientResource, identifierValue);
+          
+          console.log('📤 Enviando Patient a FHIR:', { patientId: fhirPatientId, identifier: identifierValue });
+          const patientResponse = await syncPatient(patientResource, identifierValue);
+          console.log('✅ Patient sincronizado exitosamente:', patientResponse);
 
           const diagnosticosTotales = [diagnosticoPrincipal, ...diagnosticosRelacionados].filter(
-            (value, index, self) => value && self.indexOf(value) === index
+            (value, index, self) => value && self.indexOf(value) === index && value.trim() !== ''
           );
 
+          console.log('📤 Enviando Conditions a FHIR:', diagnosticosTotales);
           const conditionResources = buildConditionResources({
             diagnosticos: diagnosticosTotales,
             patientReference: `Patient/${fhirPatientId}`,
@@ -2245,14 +2390,36 @@ function ConsultaFormView({ patient, deviceType }: any) {
           });
 
           if (conditionResources.length > 0) {
-            await Promise.all(conditionResources.map((resource) => createCondition(resource)));
+            const conditionResponses = await Promise.all(conditionResources.map((resource) => createCondition(resource)));
+            console.log(`✅ ${conditionResources.length} Condition(s) sincronizado(s) exitosamente:`, conditionResponses);
+          } else {
+            console.warn('⚠️ No hay diagnósticos para sincronizar');
           }
 
           setFhirSyncStatus('success');
-        } catch (fhirError) {
+          console.log('✅ Sincronización FHIR completada exitosamente - Estado actualizado a "success"');
+        } catch (fhirError: any) {
+          const errorMessage = fhirError?.message || String(fhirError);
           console.error('❌ Error sincronizando con FHIR:', fhirError);
+          console.error('❌ Detalles del error:', errorMessage);
+          console.error('❌ Stack trace:', fhirError.stack);
+          
+          // Mostrar mensaje más claro al usuario
+          if (errorMessage.includes('No se puede conectar') || errorMessage.includes('ECONNREFUSED') || errorMessage.includes('fetch failed')) {
+            console.error('⚠️ PROBLEMA DE CONEXIÓN: El backend no puede conectarse al servidor FHIR.');
+            console.error('⚠️ SOLUCIÓN: Verifica que backend/.env tenga: FHIR_BASE_URL=https://hapi.fhir.org/baseR4');
+            console.error('⚠️ Y que el backend se haya reiniciado después del cambio.');
+          } else if (errorMessage.includes('500')) {
+            console.error('⚠️ ERROR 500: El backend está teniendo problemas al conectarse al servidor FHIR.');
+            console.error('⚠️ Verifica la consola del backend para más detalles.');
+          }
+          
           setFhirSyncStatus('error');
+          console.log('❌ Estado actualizado a "error"');
         }
+      } else {
+        console.warn('⚠️ No hay paciente disponible para sincronización FHIR');
+        console.warn('⚠️ Patient object:', patient);
       }
     } catch (e: any) {
       console.error('Error guardando:', e);
@@ -2261,6 +2428,13 @@ function ConsultaFormView({ patient, deviceType }: any) {
       setGuardando(false);
     }
   };
+
+  // Log del estado FHIR para debugging
+  useEffect(() => {
+    if (fhirSyncStatus !== 'idle') {
+      console.log('📊 Estado FHIR actualizado:', fhirSyncStatus);
+    }
+  }, [fhirSyncStatus]);
 
   if (loading) {
     return (
@@ -2597,6 +2771,49 @@ function ConsultaFormView({ patient, deviceType }: any) {
             <ResponsiveField label="Temperatura (°C)">
               <ResponsiveInput type="number" step="0.1" value={temperatura} onChange={(e: any) => setTemperatura(e.target.value)} placeholder="36.5" />
             </ResponsiveField>
+          </div>
+          
+          {/* Botón y resultado de análisis de riesgo de stroke */}
+          <div className="mt-4 pt-4 border-t border-stone-200">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h6 className="font-medium text-stone-900 mb-1">Análisis de Riesgo de Stroke (IA)</h6>
+                <p className="text-xs text-stone-500">Predicción basada en datos del paciente</p>
+              </div>
+              <ResponsiveButton
+                variant="primary"
+                size="sm"
+                onClick={analizarRiesgoStroke}
+                disabled={analizandoRiesgo || !patient}
+              >
+                {analizandoRiesgo ? 'Analizando...' : 'Analizar Riesgo'}
+              </ResponsiveButton>
+            </div>
+            
+            {strokePrediction && strokePrediction.success && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-stone-600">Resultado:</span>
+                  <RiskBadge 
+                    riskLevel={strokePrediction.risk_level || 'low'} 
+                    probability={strokePrediction.probability || 0}
+                  />
+                </div>
+                
+                {strokePrediction.recommendations && strokePrediction.recommendations.length > 0 && (
+                  <AISuggestionsPanel
+                    recommendations={strokePrediction.recommendations}
+                    riskLevel={strokePrediction.risk_level || 'low'}
+                  />
+                )}
+              </div>
+            )}
+            
+            {strokePrediction && !strokePrediction.success && (
+              <div className="text-sm text-red-600 bg-red-50 p-2 rounded">
+                ⚠️ {strokePrediction.error || 'Error al analizar riesgo'}
+              </div>
+            )}
           </div>
         </ResponsiveCard>
 
