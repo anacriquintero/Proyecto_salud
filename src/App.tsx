@@ -2035,18 +2035,39 @@ function ConsultaFormView({ patient, deviceType }: any) {
             // Revisión por sistemas
             if (hcCompleta.revision_por_sistemas) {
               try {
-                const revSistemas = typeof hcCompleta.revision_por_sistemas === 'string'
-                  ? JSON.parse(hcCompleta.revision_por_sistemas)
-                  : hcCompleta.revision_por_sistemas;
-                
-                if (revSistemas.sistemas) {
-                  setRevisionPorSistemasSeleccion(revSistemas.sistemas);
+                let revSistemas;
+                if (typeof hcCompleta.revision_por_sistemas === 'string') {
+                  // Intentar parsear si es string
+                  const trimmed = hcCompleta.revision_por_sistemas.trim();
+                  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+                    // Parece JSON válido, intentar parsear
+                    try {
+                      revSistemas = JSON.parse(trimmed);
+                    } catch (parseError) {
+                      // No es JSON válido, ignorar silenciosamente
+                      revSistemas = null;
+                    }
+                  } else {
+                    // No es JSON, ignorar
+                    revSistemas = null;
+                  }
+                } else if (typeof hcCompleta.revision_por_sistemas === 'object' && hcCompleta.revision_por_sistemas !== null) {
+                  // Ya es un objeto
+                  revSistemas = hcCompleta.revision_por_sistemas;
                 }
-                if (revSistemas.hallazgos) {
-                  setRevisionPorSistemasHallazgos(revSistemas.hallazgos);
+                
+                // Verificar que revSistemas es un objeto válido
+                if (revSistemas && typeof revSistemas === 'object' && !Array.isArray(revSistemas)) {
+                  if (revSistemas.sistemas) {
+                    setRevisionPorSistemasSeleccion(revSistemas.sistemas);
+                  }
+                  if (revSistemas.hallazgos) {
+                    setRevisionPorSistemasHallazgos(revSistemas.hallazgos);
+                  }
                 }
               } catch (e) {
-                console.error('Error parseando revisión por sistemas:', e);
+                // Error silencioso - no es crítico si no se puede cargar la revisión por sistemas
+                console.debug('No se pudo cargar revisión por sistemas:', e);
               }
             }
             
@@ -2223,17 +2244,29 @@ function ConsultaFormView({ patient, deviceType }: any) {
       }
 
       // Sincronización HL7 FHIR
+      console.log('🔍 Verificando sincronización FHIR...', { 
+        hasPatient: !!patient, 
+        patientId: patient?.id,
+        diagnosticoPrincipal: diagnosticoPrincipal 
+      });
+      
       if (patient) {
+        console.log('🔄 Iniciando sincronización FHIR...');
         setFhirSyncStatus('syncing');
+        
         try {
           const { resource: patientResource, patientId: fhirPatientId } = buildPatientResource(patient);
           const identifierValue = patient.documento || patient.numero_documento || patient.id?.toString();
-          await syncPatient(patientResource, identifierValue);
+          
+          console.log('📤 Enviando Patient a FHIR:', { patientId: fhirPatientId, identifier: identifierValue });
+          const patientResponse = await syncPatient(patientResource, identifierValue);
+          console.log('✅ Patient sincronizado exitosamente:', patientResponse);
 
           const diagnosticosTotales = [diagnosticoPrincipal, ...diagnosticosRelacionados].filter(
-            (value, index, self) => value && self.indexOf(value) === index
+            (value, index, self) => value && self.indexOf(value) === index && value.trim() !== ''
           );
 
+          console.log('📤 Enviando Conditions a FHIR:', diagnosticosTotales);
           const conditionResources = buildConditionResources({
             diagnosticos: diagnosticosTotales,
             patientReference: `Patient/${fhirPatientId}`,
@@ -2245,14 +2278,36 @@ function ConsultaFormView({ patient, deviceType }: any) {
           });
 
           if (conditionResources.length > 0) {
-            await Promise.all(conditionResources.map((resource) => createCondition(resource)));
+            const conditionResponses = await Promise.all(conditionResources.map((resource) => createCondition(resource)));
+            console.log(`✅ ${conditionResources.length} Condition(s) sincronizado(s) exitosamente:`, conditionResponses);
+          } else {
+            console.warn('⚠️ No hay diagnósticos para sincronizar');
           }
 
           setFhirSyncStatus('success');
-        } catch (fhirError) {
+          console.log('✅ Sincronización FHIR completada exitosamente - Estado actualizado a "success"');
+        } catch (fhirError: any) {
+          const errorMessage = fhirError?.message || String(fhirError);
           console.error('❌ Error sincronizando con FHIR:', fhirError);
+          console.error('❌ Detalles del error:', errorMessage);
+          console.error('❌ Stack trace:', fhirError.stack);
+          
+          // Mostrar mensaje más claro al usuario
+          if (errorMessage.includes('No se puede conectar') || errorMessage.includes('ECONNREFUSED') || errorMessage.includes('fetch failed')) {
+            console.error('⚠️ PROBLEMA DE CONEXIÓN: El backend no puede conectarse al servidor FHIR.');
+            console.error('⚠️ SOLUCIÓN: Verifica que backend/.env tenga: FHIR_BASE_URL=https://hapi.fhir.org/baseR4');
+            console.error('⚠️ Y que el backend se haya reiniciado después del cambio.');
+          } else if (errorMessage.includes('500')) {
+            console.error('⚠️ ERROR 500: El backend está teniendo problemas al conectarse al servidor FHIR.');
+            console.error('⚠️ Verifica la consola del backend para más detalles.');
+          }
+          
           setFhirSyncStatus('error');
+          console.log('❌ Estado actualizado a "error"');
         }
+      } else {
+        console.warn('⚠️ No hay paciente disponible para sincronización FHIR');
+        console.warn('⚠️ Patient object:', patient);
       }
     } catch (e: any) {
       console.error('Error guardando:', e);
@@ -2261,6 +2316,13 @@ function ConsultaFormView({ patient, deviceType }: any) {
       setGuardando(false);
     }
   };
+
+  // Log del estado FHIR para debugging
+  useEffect(() => {
+    if (fhirSyncStatus !== 'idle') {
+      console.log('📊 Estado FHIR actualizado:', fhirSyncStatus);
+    }
+  }, [fhirSyncStatus]);
 
   if (loading) {
     return (
