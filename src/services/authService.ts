@@ -3,7 +3,7 @@ import { User, LoginCredentials } from '../types/auth';
 import { PerfilAutocompletado, CrearPerfilPayload, ActualizarPerfilPayload } from '../types/perfiles';
 import { ConsultaADRESResponse } from '../types/adres';
 
-const API_URL = 'http://localhost:3001/api';
+const API_URL = 'https://salud-digital-backend.onrender.com/api';
 
 export interface ApiUser {
   id: number;

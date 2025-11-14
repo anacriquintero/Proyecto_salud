@@ -3,7 +3,7 @@
  * Cliente para interactuar con los endpoints de IA del backend
  */
 
-const API_URL = 'http://localhost:3001/api';
+const API_URL = 'https://salud-digital-backend.onrender.com/api';
 
 export interface StrokePredictionRequest {
   age: number;

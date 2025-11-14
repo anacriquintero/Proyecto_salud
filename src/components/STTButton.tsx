@@ -60,7 +60,7 @@ export const STTButton: React.FC<STTButtonProps> = ({
           const formData = new FormData();
           formData.append('audio', audioBlob, 'audio.webm');
 
-          const response = await fetch('http://localhost:3001/api/stt', {
+          const response = await fetch('https://salud-digital-backend.onrender.com/api/stt', {
             method: 'POST',
             body: formData
           });

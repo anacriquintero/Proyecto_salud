@@ -1,4 +1,4 @@
-const API_URL = 'http://localhost:3001/api';
+const API_URL = 'https://salud-digital-backend.onrender.com/api';
 
 interface FhirResponse<T = any> {
   success: boolean;
