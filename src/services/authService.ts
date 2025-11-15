@@ -4,7 +4,7 @@ import { PerfilAutocompletado, CrearPerfilPayload, ActualizarPerfilPayload } fro
 import { ConsultaADRESResponse } from '../types/adres';
 import { API_BASE_URL } from '../config/api';
 
-const API_URL = API_BASE_URL;
+const API_URL = 'https://salud-digital-backend.onrender.com/api';
 
 export interface ApiUser {
   id: number;
