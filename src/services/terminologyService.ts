@@ -1,3 +1,5 @@
+import { API_BASE_URL } from '../config/api';
+
 export interface TerminologyOption {
   code: string;
   display: string;
@@ -5,7 +7,7 @@ export interface TerminologyOption {
   designation?: Array<Record<string, any>>;
 }
 
-const API_URL = 'http://localhost:3001/api';
+const API_URL = API_BASE_URL;
 
 async function get<T>(endpoint: string): Promise<T> {
   const response = await fetch(`${API_URL}${endpoint}`);

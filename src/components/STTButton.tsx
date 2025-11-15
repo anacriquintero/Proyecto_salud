@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Mic, MicOff, Loader2 } from 'lucide-react';
+import { API_BASE_URL } from '../config/api';
 
 interface STTButtonProps {
   onTranscription: (text: string) => void;
@@ -60,7 +61,7 @@ export const STTButton: React.FC<STTButtonProps> = ({
           const formData = new FormData();
           formData.append('audio', audioBlob, 'audio.webm');
 
-          const response = await fetch('http://localhost:3001/api/stt', {
+          const response = await fetch(`${API_BASE_URL}/stt`, {
             method: 'POST',
             body: formData
           });
