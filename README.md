@@ -131,3 +131,5 @@ Tablas derivadas correctamente asociadas
 Campos requeridos para sistema médico
 
 Base de datos validada y funcionando
+
+Subido a Backend de render
