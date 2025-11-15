@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Mic, MicOff, Loader2 } from 'lucide-react';
+import { API_BASE_URL } from '../config/api';
 
 interface STTButtonProps {
   onTranscription: (text: string) => void;

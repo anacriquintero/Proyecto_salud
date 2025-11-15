@@ -1,3 +1,5 @@
+import { API_BASE_URL } from '../config/api';
+
 export interface TerminologyOption {
   code: string;
   display: string;

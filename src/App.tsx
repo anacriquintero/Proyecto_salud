@@ -8,6 +8,7 @@ import { TerminologyAutocomplete } from "./components/TerminologyAutocomplete";
 import { syncPatient, createCondition, createMedicationRequest, createMedication } from "./services/fhirService";
 import { buildPatientResource, buildConditionResources, buildMedicationRequestResources, buildMedicationResources } from "./utils/fhirMappers";
 import { ConsultarADRESButton } from "./components/ConsultarADRESButton";
+import { API_BASE_URL } from "./config/api";
 import { 
   User, 
   Users, 

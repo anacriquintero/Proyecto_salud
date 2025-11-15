@@ -2,6 +2,7 @@
 import { User, LoginCredentials } from '../types/auth';
 import { PerfilAutocompletado, CrearPerfilPayload, ActualizarPerfilPayload } from '../types/perfiles';
 import { ConsultaADRESResponse } from '../types/adres';
+import { API_BASE_URL } from '../config/api';
 
 const API_URL = 'https://salud-digital-backend.onrender.com/api';
 
