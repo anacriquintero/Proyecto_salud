@@ -1,15 +1,22 @@
 const http = require('http');
+const https = require('https');
+const { API_BASE_URL } = require('./config');
 
 console.log('🧪 Probando endpoint de demandas asignadas...');
+console.log('📍 URL:', API_BASE_URL);
+
+// Parsear URL y determinar protocolo
+const url = new URL(API_BASE_URL + '/usuarios/5/demandas-asignadas');
+const protocol = url.protocol === 'https:' ? https : http;
 
 const options = {
-  hostname: 'localhost',
-  port: 3001,
-  path: '/api/usuarios/5/demandas-asignadas',
+  hostname: url.hostname,
+  port: url.port || (url.protocol === 'https:' ? 443 : 80),
+  path: url.pathname + url.search,
   method: 'GET'
 };
 
-const req = http.request(options, (res) => {
+const req = protocol.request(options, (res) => {
   console.log(`📡 Status: ${res.statusCode}`);
   console.log(`📡 Headers:`, res.headers);
 
@@ -31,7 +38,7 @@ const req = http.request(options, (res) => {
 
 req.on('error', (e) => {
   console.error('❌ Error en la petición:', e.message);
-  console.log('💡 Asegúrate de que el servidor esté corriendo en el puerto 3001');
+  console.log('💡 Verifica que el backend esté accesible en:', API_BASE_URL);
 });
 
 req.setTimeout(5000, () => {

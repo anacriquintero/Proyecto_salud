@@ -1,7 +1,8 @@
 // backend/verificar_endpoints_medicos.js
 const http = require('http');
-
-const API_URL = 'http://localhost:3001/api';
+const https = require('https');
+const { API_BASE_URL, BACKEND_URL } = require('./config');
+const API_URL = API_BASE_URL;
 
 // Colores para output
 const colors = {
@@ -18,17 +19,21 @@ function log(message, color = 'reset') {
 
 function makeRequest(method, path, body = null) {
   return new Promise((resolve, reject) => {
+    // Determinar protocolo y parsear URL
+    const url = new URL(API_BASE_URL + path);
+    const protocol = url.protocol === 'https:' ? https : http;
+    
     const options = {
-      hostname: 'localhost',
-      port: 3001,
-      path: `/api${path}`,
+      hostname: url.hostname,
+      port: url.port || (url.protocol === 'https:' ? 443 : 80),
+      path: url.pathname + url.search,
       method: method,
       headers: {
         'Content-Type': 'application/json'
       }
     };
 
-    const req = http.request(options, (res) => {
+    const req = protocol.request(options, (res) => {
       let data = '';
       res.on('data', (chunk) => {
         data += chunk;

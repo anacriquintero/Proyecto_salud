@@ -1,22 +1,21 @@
 const http = require('http');
+const https = require('https');
+const { API_BASE_URL } = require('./config');
 
 console.log('🧪 Probando endpoints básicos...');
+console.log('📍 URL del Backend:', API_BASE_URL);
 
-// Probar endpoint de test
-const testReq = http.get('http://localhost:3001/api/test', (res) => {
-  console.log(`📡 Test endpoint - Status: ${res.statusCode}`);
-  
-  let data = '';
-  res.on('data', (chunk) => {
-    data += chunk;
-  });
-  
-  res.on('end', () => {
-    console.log('📋 Respuesta test:', data);
+// Determinar protocolo según la URL
+const protocol = API_BASE_URL.includes('https') ? https : http;
+
+// Función para probar un endpoint
+function testEndpoint(endpoint) {
+  return new Promise((resolve, reject) => {
+    const url = `${API_BASE_URL}${endpoint}`;
+    console.log(`\n📡 Probando: ${url}`);
     
-    // Si el test funciona, probar health
-    const healthReq = http.get('http://localhost:3001/api/health', (res) => {
-      console.log(`📡 Health endpoint - Status: ${res.statusCode}`);
+    const req = protocol.get(url, (res) => {
+      console.log(`   Status: ${res.statusCode}`);
       
       let data = '';
       res.on('data', (chunk) => {
@@ -24,17 +23,33 @@ const testReq = http.get('http://localhost:3001/api/test', (res) => {
       });
       
       res.on('end', () => {
-        console.log('📋 Respuesta health:', data);
+        console.log(`   Respuesta: ${data.substring(0, 100)}...`);
+        resolve({ status: res.statusCode, data });
       });
     });
     
-    healthReq.on('error', (e) => {
-      console.error('❌ Error en health endpoint:', e.message);
+    req.on('error', (e) => {
+      console.error(`   ❌ Error: ${e.message}`);
+      reject(e);
+    });
+    
+    req.setTimeout(5000, () => {
+      req.destroy();
+      reject(new Error('Timeout'));
     });
   });
-});
+}
 
-testReq.on('error', (e) => {
-  console.error('❌ Error en test endpoint:', e.message);
-  console.log('💡 El servidor no está corriendo o no responde');
-});
+// Probar endpoints
+async function runTests() {
+  try {
+    await testEndpoint('/test');
+    await testEndpoint('/health');
+    console.log('\n✅ Tests completados');
+  } catch (error) {
+    console.error('\n❌ Error en tests:', error.message);
+    console.log('💡 Verifica que el servidor esté corriendo y accesible');
+  }
+}
+
+runTests();
