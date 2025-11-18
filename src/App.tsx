@@ -9,6 +9,7 @@ import { syncPatient, createCondition, createMedicationRequest, createMedication
 import { buildPatientResource, buildConditionResources, buildMedicationRequestResources, buildMedicationResources } from "./utils/fhirMappers";
 import { ConsultarADRESButton } from "./components/ConsultarADRESButton";
 import { API_BASE_URL } from "./config/api";
+import { AntecedentesFamiliares } from "./components/AntecedentesFamiliares";
 import { 
   User, 
   Users, 

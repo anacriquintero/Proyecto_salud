@@ -21,7 +21,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 const upload = multer({ dest: path.join(__dirname, 'uploads') });
 
 // Conectar a SQLite (usa la ruta correcta de tu BD)
-const dbPath = path.join(__dirname, 'database', 'salud_digital_aps.db');
+const dbPath = 'D:\\UAO\\SEMESTRE7\\SALUD_DIGITAL\\db\\salud_digital_aps.db';
 console.log('📊 Base de datos: ', dbPath);
 const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
@@ -3277,6 +3277,212 @@ app.get('/api/debug/users', (req, res) => {
       count: usuarios.length,
       users: usuarios,
       dbPath: dbPath
+    });
+  });
+});
+
+
+
+
+
+// ==================== ENDPOINTS DE ANTECEDENTES FAMILIARES ====================
+
+// Obtener árbol familiar completo
+app.get('/api/familias/:id/arbol', (req, res) => {
+  const { id } = req.params;
+  
+  const query = `
+    SELECT 
+      f.familia_id,
+      f.apellido_principal,
+      p.paciente_id,
+      p.primer_nombre || ' ' || p.primer_apellido as nombre_completo,
+      p.parentesco,
+      p.fecha_nacimiento,
+      p.genero,
+      padre.primer_nombre || ' ' || padre.primer_apellido as nombre_padre,
+      madre.primer_nombre || ' ' || madre.primer_apellido as nombre_madre
+    FROM Pacientes p
+    JOIN Familias f ON p.familia_id = f.familia_id
+    LEFT JOIN Pacientes padre ON p.id_padre = padre.paciente_id
+    LEFT JOIN Pacientes madre ON p.id_madre = madre.paciente_id
+    WHERE p.familia_id = ? AND p.activo = 1
+    ORDER BY p.parentesco, p.fecha_nacimiento
+  `;
+  
+  db.all(query, [id], (err, rows) => {
+    if (err) {
+      console.error('Error obteniendo árbol familiar:', err);
+      console.error('Error details:', err.message);
+      return res.status(500).json({ error: 'Error obteniendo árbol familiar: ' + err.message });
+    }
+    
+    res.json({
+      success: true,
+      data: rows,
+      total: rows.length
+    });
+  });
+});
+
+// Obtener antecedentes familiares de un paciente
+app.get('/api/pacientes/:id/antecedentes-familiares', (req, res) => {
+  const { id } = req.params;
+  
+  const query = `
+    SELECT 
+      af.paciente_id,
+      p.primer_nombre || ' ' || p.primer_apellido as paciente_nombre,
+      af.parentesco,
+      f.primer_nombre || ' ' || f.primer_apellido as familiar_nombre,
+      af.condicion_salud,
+      af.diagnostico,
+      af.gravedad,
+      af.estado_actual,
+      af.fecha_diagnostico,
+      af.fuente_antecedente
+    FROM Antecedentes_Familiares af
+    JOIN Pacientes p ON af.paciente_id = p.paciente_id
+    JOIN Pacientes f ON af.familiar_id = f.paciente_id
+    WHERE af.paciente_id = ?
+    ORDER BY af.parentesco, af.gravedad DESC
+  `;
+  
+  db.all(query, [id], (err, rows) => {
+    if (err) {
+      console.error('Error obteniendo antecedentes familiares:', err);
+      console.error('Error details:', err.message);
+      return res.status(500).json({ error: 'Error obteniendo antecedentes familiares: ' + err.message });
+    }
+    
+    res.json({
+      success: true,
+      data: rows,
+      total: rows.length,
+      automaticos: rows.filter(r => r.fuente_antecedente === 'Automático').length
+    });
+  });
+});
+
+// Registrar condición de salud familiar (para propagación automática)
+app.post('/api/condiciones-salud-familiares', (req, res) => {
+  const {
+    paciente_id,
+    condicion_salud,
+    diagnostico,
+    fecha_diagnostico,
+    gravedad,
+    es_hereditario,
+    estado,
+    especialidad
+  } = req.body;
+
+  if (!paciente_id || !condicion_salud) {
+    return res.status(400).json({
+      error: 'Faltan campos obligatorios: paciente_id, condicion_salud'
+    });
+  }
+
+  const insert = `
+    INSERT INTO Condiciones_Salud_Familiares (
+      paciente_id, condicion_salud, diagnostico, fecha_diagnostico,
+      gravedad, es_hereditario, estado, especialidad
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `;
+
+  db.run(insert, [
+    paciente_id,
+    condicion_salud,
+    diagnostico || null,
+    fecha_diagnostico || new Date().toISOString().split('T')[0],
+    gravedad || 'Moderada',
+    es_hereditario ? 1 : 0,
+    estado || 'Activo',
+    especialidad || 'Medicina General'
+  ], function(err) {
+    if (err) {
+      console.error('Error registrando condición de salud:', err);
+      return res.status(500).json({ error: 'Error registrando condición de salud: ' + err.message });
+    }
+
+    res.status(201).json({
+      success: true,
+      condicion_id: this.lastID,
+      message: 'Condición de salud registrada y propagada a familiares'
+    });
+  });
+});
+
+// Establecer relaciones familiares para un paciente
+app.put('/api/pacientes/:id/relaciones-familiares', (req, res) => {
+  const { id } = req.params;
+  const { id_padre, id_madre, parentesco } = req.body;
+  
+  const update = `
+    UPDATE Pacientes 
+    SET id_padre = ?, id_madre = ?, parentesco = ?
+    WHERE paciente_id = ?
+  `;
+  
+  db.run(update, [
+    id_padre || null,
+    id_madre || null, 
+    parentesco || null,
+    id
+  ], function(err) {
+    if (err) {
+      console.error('Error actualizando relaciones familiares:', err);
+      return res.status(500).json({ error: 'Error actualizando relaciones familiares: ' + err.message });
+    }
+    
+    if (this.changes === 0) {
+      return res.status(404).json({ error: 'Paciente no encontrado' });
+    }
+    
+    res.json({
+      success: true,
+      message: 'Relaciones familiares actualizadas correctamente'
+    });
+  });
+});
+
+// Obtener pacientes por familia para gestión de relaciones
+app.get('/api/familias/:id/pacientes-completos', (req, res) => {
+  const { id } = req.params;
+  
+  const query = `
+    SELECT 
+      p.paciente_id,
+      p.numero_documento,
+      p.tipo_documento,
+      p.primer_nombre,
+      p.segundo_nombre,
+      p.primer_apellido,
+      p.segundo_apellido,
+      p.fecha_nacimiento,
+      p.genero,
+      p.parentesco,
+      p.id_padre,
+      p.id_madre,
+      padre.primer_nombre || ' ' || padre.primer_apellido as nombre_padre,
+      madre.primer_nombre || ' ' || madre.primer_apellido as nombre_madre
+    FROM Pacientes p
+    LEFT JOIN Pacientes padre ON p.id_padre = padre.paciente_id
+    LEFT JOIN Pacientes madre ON p.id_madre = madre.paciente_id
+    WHERE p.familia_id = ? AND p.activo = 1
+    ORDER BY p.fecha_nacimiento
+  `;
+  
+  db.all(query, [id], (err, rows) => {
+    if (err) {
+      console.error('Error obteniendo pacientes de familia:', err);
+      return res.status(500).json({ error: 'Error obteniendo pacientes: ' + err.message });
+    }
+    
+    res.json({
+      success: true,
+      data: rows,
+      total: rows.length
     });
   });
 });
