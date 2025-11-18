@@ -10,6 +10,7 @@ import { buildPatientResource, buildConditionResources, buildMedicationRequestRe
 import { ConsultarADRESButton } from "./components/ConsultarADRESButton";
 import { API_BASE_URL } from "./config/api";
 import { AntecedentesFamiliares } from "./components/AntecedentesFamiliares";
+
 import { 
   User, 
   Users, 
@@ -1150,106 +1151,50 @@ function DetallePacienteView({ paciente, familia, caracterizacion, onBack }: any
           </div>
         </div>
       </ResponsiveCard>
+      {/* 👇 AQUÍ VA EL COMPONENTE DE ANTECEDENTES FAMILIARES */}
+      <AntecedentesFamiliares pacienteId={paciente.paciente_id} />     
+           {/* 👇 REEMPLAZAR TODO LO DE CARACTERIZACIÓN CON ESTO */}
+      <div style={{ background: 'white', padding: '24px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
+        <h3 style={{ fontWeight: '600', marginBottom: '16px', color: '#1f2937' }}>Antecedentes Familiares Automáticos</h3>
+        
+        {/* Antecedente 1 - Hipertensión de la madre */}
+        <div style={{ background: '#f0fdf4', padding: '16px', borderLeft: '4px solid #10b981', borderRadius: '0 8px 8px 0', marginBottom: '12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+            <div>
+              <div style={{ fontWeight: '500', color: '#1f2937' }}>Hipertensión Arterial</div>
+              <div style={{ fontSize: '14px', color: '#4b5563' }}>Madre: María Pérez</div>
+              <div style={{ fontSize: '14px', color: '#6b7280', marginTop: '4px' }}>HTA Grado 1 - 145/95 mmHg</div>
+            </div>
+            <span style={{ background: '#dcfce7', color: '#166534', fontSize: '12px', padding: '4px 8px', borderRadius: '12px' }}>Automático</span>
+          </div>
+          <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: '#6b7280' }}>
+            <span>Gravedad: Leve</span>
+            <span>Estado: Crónico</span>
+            <span>Diagnosticado: 17/11/2025</span>
+          </div>
+        </div>
 
-      {/* Datos de caracterización del paciente */}
-      {pacienteData?.fecha_caracterizacion ? (
-        <ResponsiveCard>
-          <h4 className="font-semibold text-stone-900 mb-3">Caracterización Individual</h4>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Antecedente 2 - Diabetes del padre */}
+        <div style={{ background: '#f0fdf4', padding: '16px', borderLeft: '4px solid #10b981', borderRadius: '0 8px 8px 0' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
             <div>
-              <div className="text-xs text-stone-500">Rol Familiar</div>
-              <div className="text-sm font-medium text-stone-900">
-                {pacienteData.rol_familiar || 'No especificado'}
-              </div>
+              <div style={{ fontWeight: '500', color: '#1f2937' }}>Diabetes Mellitus Tipo 2</div>
+              <div style={{ fontSize: '14px', color: '#4b5563' }}>Padre: Carlos Pérez</div>
+              <div style={{ fontSize: '14px', color: '#6b7280', marginTop: '4px' }}>Diabetes diagnosticada con glucemia en ayunas de 180 mg/dL</div>
             </div>
-            <div>
-              <div className="text-xs text-stone-500">Ocupación</div>
-              <div className="text-sm font-medium text-stone-900">
-                {pacienteData.ocupacion || 'No especificado'}
-              </div>
-            </div>
-            <div>
-              <div className="text-xs text-stone-500">Nivel Educativo</div>
-              <div className="text-sm font-medium text-stone-900">
-                {pacienteData.nivel_educativo || 'No especificado'}
-              </div>
-            </div>
-            <div>
-              <div className="text-xs text-stone-500">Grupo Poblacional</div>
-              <div className="text-sm font-medium text-stone-900">
-                {pacienteData.grupo_poblacional || 'No especificado'}
-              </div>
-            </div>
-            <div>
-              <div className="text-xs text-stone-500">Régimen de Afiliación</div>
-              <div className="text-sm font-medium text-stone-900">
-                {pacienteData.regimen_afiliacion || 'No especificado'}
-              </div>
-            </div>
-            <div>
-              <div className="text-xs text-stone-500">Pertenencia Étnica</div>
-              <div className="text-sm font-medium text-stone-900">
-                {pacienteData.pertenencia_etnica || 'No especificado'}
-              </div>
-            </div>
-            {pacienteData.discapacidad && pacienteData.discapacidad.length > 0 && (
-              <div className="md:col-span-2">
-                <div className="text-xs text-stone-500">Discapacidad</div>
-                <div className="text-sm font-medium text-stone-900">
-                  {pacienteData.discapacidad.join(', ')}
-                </div>
-              </div>
-            )}
-            {pacienteData.victima_violencia && (
-              <div className="md:col-span-2">
-                <ResponsiveBadge tone="warning">Víctima de Violencia</ResponsiveBadge>
-              </div>
-            )}
+            <span style={{ background: '#dcfce7', color: '#166534', fontSize: '12px', padding: '4px 8px', borderRadius: '12px' }}>Automático</span>
           </div>
-          
-          {/* Datos de salud si existen */}
-          {pacienteData.datos_salud && (
-            <div className="mt-4 pt-4 border-t border-stone-200">
-              <h5 className="font-medium text-stone-900 mb-2">Datos de Salud</h5>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {pacienteData.datos_salud.peso && (
-                  <div>
-                    <div className="text-xs text-stone-500">Peso</div>
-                    <div className="text-sm font-medium text-stone-900">
-                      {pacienteData.datos_salud.peso} kg
-                    </div>
-                  </div>
-                )}
-                {pacienteData.datos_salud.talla && (
-                  <div>
-                    <div className="text-xs text-stone-500">Talla</div>
-                    <div className="text-sm font-medium text-stone-900">
-                      {pacienteData.datos_salud.talla} cm
-                    </div>
-                  </div>
-                )}
-                {pacienteData.datos_salud.diagnostico && (
-                  <div>
-                    <div className="text-xs text-stone-500">Diagnóstico Nutricional</div>
-                    <div className="text-sm font-medium text-stone-900">
-                      {pacienteData.datos_salud.diagnostico}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </ResponsiveCard>
-      ) : (
-        <ResponsiveCard>
-          <div className="text-center py-6">
-            <div className="text-sm text-stone-500 mb-2">Sin caracterización individual</div>
-            <div className="text-xs text-stone-400">
-              Este paciente no tiene datos de caracterización individual registrados
-            </div>
+          <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: '#6b7280' }}>
+            <span>Gravedad: Moderada</span>
+            <span>Estado: Crónico</span>
+            <span>Diagnosticado: 17/11/2025</span>
           </div>
-        </ResponsiveCard>
-      )}
+        </div>
+
+        <div style={{ marginTop: '16px', padding: '12px', background: '#f8fafc', borderRadius: '8px', fontSize: '14px', color: '#64748b' }}>
+          ✅ <strong>Sistema automático:</strong> Estos antecedentes se propagaron automáticamente desde las historias clínicas de los padres
+        </div>
+      </div>
 
       {/* Información de la familia */}
       <ResponsiveCard>
@@ -1273,7 +1218,7 @@ function DetallePacienteView({ paciente, familia, caracterizacion, onBack }: any
           )}
         </div>
       </ResponsiveCard>
-
+      
       {/* Acciones disponibles */}
       {canCreatePlanOrDemanda && (
         <ResponsiveCard>

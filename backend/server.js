@@ -13,8 +13,29 @@ const fhirClient = require('./services/fhirClient');
 const aiService = require('./services/aiService');
 require('dotenv').config();
 
+// ✅ PRIMERO DECLARAR app
 const app = express();
-app.use(cors());
+
+// 🔧 CONFIGURACIÓN CORS TEMPORAL - PERMITIR TODOS LOS ORIGENS
+app.use(cors({
+  origin: true, // Permitir cualquier origen
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Bypass-Tunnel-Reminder']
+}));
+
+// También agregar headers manualmente por si acaso
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Bypass-Tunnel-Reminder');
+  
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  next();
+});
+
 app.use(express.json());
 // Servir archivos estáticos desde /public para poder exponer el mp3 si se desea
 app.use(express.static(path.join(__dirname, 'public')));
@@ -30,8 +51,6 @@ const db = new sqlite3.Database(dbPath, (err) => {
     console.log('✅ Conectado a la base de datos SQLite');
   }
 });
-// (Autenticación simple temporal: sin bcrypt)
-
 // ==================== ENDPOINTS DE AUTENTICACIÓN ====================
 
 // Login de usuarios
