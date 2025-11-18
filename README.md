@@ -1,135 +1,126 @@
-# Salud Digital APS - Sistema de Gestión
+# Proyecto Salud Digital APS
 
-## 📋 Descripción
+## 📋 Descripción General
 
-Sistema de gestión para programas de Atención Primaria en Salud (APS) que optimiza el registro de información clínica y administrativa.
+**Salud Digital APS** es un sistema de gestión integral para programas de Atención Primaria en Salud (APS). Su objetivo es optimizar el registro de información clínica y administrativa, facilitar la gestión de pacientes y familias, y proveer herramientas de apoyo para los profesionales de la salud.
 
-## 🏥 Características Principales
+El sistema cuenta con una arquitectura de aplicación web moderna, con un frontend desarrollado en **React/TypeScript** y un backend en **Node.js/Express** que se conecta a una base de datos **SQLite**.
 
-- **Historia Clínica Digital** por especialidades médicas
-- **Gestión de Familias y Pacientes** 
-- **Recetario Digital** con control de medicamentos
-- **Órdenes de Laboratorio** y procedimientos
-- **Dashboard Epidemiológico** y reportes
-- **Multi-rol** para diferentes profesionales de la salud
-- **Interoperabilidad HL7 FHIR** (ver `docs/INTEROPERABILIDAD_FHIR.md`)
+## ✨ Características Principales
 
-## 🗄️ Base de Datos - Estructura Corregida ✅
+- **Gestión de Roles de Usuario**: Perfiles para Médico, Psicólogo, Enfermero, Fisioterapeuta, etc.
+- **Historia Clínica Digital**: Módulos específicos por especialidad (Medicina General, Psicología).
+- **Gestión de Pacientes y Familias**: Registro y seguimiento de datos demográficos y de cuidado.
+- **Apoyo a Decisiones Clínicas**:
+  - **Predicción de ACV**: Integración con un modelo de IA (Python/Scikit-learn) para predecir el riesgo de accidente cerebrovascular.
+  - **Interoperabilidad FHIR**: Capacidad de conectarse a servidores FHIR (Fast Healthcare Interoperability Resources) para el intercambio de datos estándar.
+- **Funcionalidades Multimedia**:
+  - **Text-to-Speech (TTS)** y **Speech-to-Text (STT)** a través de la API de ElevenLabs.
+- **Consulta de Afiliados**: Integración con el servicio de ADRES/BDUA (Base de Datos Única de Afiliados) a través de Apitude.
 
-### 📊 Modelo Hub-and-Spoke Implementado
+---
 
-### 🏗️ Estructura de Tablas
+## 🔧 Arquitectura y Tecnologías
 
-#### **Módulo Común**
-- `Roles` - Tipos de usuarios del sistema
-- `Equipos_Basicos` - Equipos de salud
-- `Usuarios` - Profesionales y personal
-- `Familias` - Grupos familiares
-- `Pacientes` - Datos de pacientes
-- `Planes_Cuidado_Familiar` - Planes de cuidado
-- `Demandas_Inducidas` - Necesidades identificadas
+- **Frontend**: React, TypeScript, Vite, Tailwind CSS
+- **Backend**: Node.js, Express.js
+- **Base de Datos**: SQLite
+- **Integraciones de IA**:
+  - Modelo de predicción de ACV en Python (`sklearn`, `numpy`).
+  - Servicios de ElevenLabs para TTS/STT.
+- **Interoperabilidad**: Soporte para HL7 FHIR.
 
-#### **Hub Central**
-- `Atenciones_Clinicas` - Registro central de atenciones médicas
+---
 
-#### **Spokes Clínicos (Especialidades)**
-- `HC_Medicina_General` - Historia clínica medicina general
-- `HC_Psicologia` - Historia clínica psicología
-- `HC_Fisioterapia` - Historia clínica fisioterapia
-- `HC_Nutricion` - Historia clínica nutrición
-- `HC_Fonoaudiologia` - Historia clínica fonoaudiología
-- `HC_Odontologia` - Historia clínica odontología
+## ⚙️ Configuración y Puesta en Marcha
 
-#### **Entidades de Salida (CORREGIDAS ✅)**
-- `Recetas_Medicas` - **DERIVADA de HC_Medicina_General**
-- `Ordenes_Laboratorio` - **DERIVADA de HC_Medicina_General**
+### **Requisitos Previos**
 
-## 🔗 Relaciones Corregidas - Implementadas
+- **Node.js** (v18 o superior)
+- **npm** (o un gestor de paquetes equivalente)
+- **Python** (v3.x) con las librerías `scikit-learn` y `numpy`.
+- Un servidor **HAPI FHIR** en ejecución (para la funcionalidad de interoperabilidad). Puede usar la configuración de Docker en `sandbox/hapi-fhir/`.
 
-👥 Roles del Sistema
-Médico - Consultas, diagnósticos, tratamientos, recetas, órdenes
+### **1. Configuración del Backend**
 
-Psicólogo - Evaluaciones psicológicas
+a. **Navegue al directorio del backend:**
+   ```bash
+   cd backend
+   ```
 
-Fisioterapeuta - Terapias de rehabilitación
+b. **Instale las dependencias de Node.js:**
+   ```bash
+   npm install
+   ```
 
-Nutricionista - Planes alimentarios
+c. **Cree el archivo de variables de entorno:**
+   Cree un archivo `.env` en el directorio `backend/` y agregue las siguientes variables.
 
-Fonoaudiólogo - Terapias de habla y audición
+   ```env
+   # Ruta a la base de datos SQLite
+   DB_PATH=./salud_digital_aps.db
 
-Odontólogo - Salud oral
+   # URL del servidor FHIR (usar el de HAPI FHIR si se ejecuta localmente)
+   FHIR_BASE_URL=http://localhost:8080/fhir
 
-Enfermero Jefe - Gestión de cuidados
+   # --- Claves de API (Opcionales pero recomendadas) ---
 
-Auxiliar de Enfermería - Apoyo en cuidados
+   # API Key de ElevenLabs para las funciones de Speech-to-Text y Text-to-Speech
+   ELEVENLABS_API_KEY=tu_api_key_de_elevenlabs
 
-Administrativo - Gestión administrativa
+   # API Key de Apitude para consultar ADRES/BDUA
+   # Obtenga su clave en: https://apitude.co
+   APITUDE_API_KEY=tu_api_key_de_apitude
+   ```
 
-🚀 Instalación y Ejecución
-Backend
-bash
-cd backend
-npm install
-npm run dev
-<<<<<<< HEAD
-Frontend
-bash
-npm install
-npm run dev
-🔧 Tecnologías
-Frontend: React 18 + TypeScript + Vite + Tailwind CSS
-=======
-```
+d. **Inicie el servidor de backend:**
+   ```bash
+   npm run dev
+   ```
+   El servidor se ejecutará en `http://localhost:3001`.
 
-#### Variables de entorno
-Crea un archivo `.env` en `backend/` con:
+### **2. Configuración del Frontend**
 
-```env
-# API Key de ElevenLabs para Speech-to-Text y Text-to-Speech
-ELEVENLABS_API_KEY=tu_api_key_de_elevenlabs
+a. **Navegue al directorio raíz del proyecto.**
 
-# API Key de Apitude para consultar ADRES/BDUA (opcional)
-# Obtén tu API key en: https://apitude.co
-# Cuando tengas acceso, agrega:
-# APITUDE_API_KEY=tu_api_key_aqui
-```
+b. **Instale las dependencias del frontend:**
+   ```bash
+   npm install
+   ```
 
-Endpoint TTS: `POST http://localhost:3001/api/tts` con body `{ "texto": "Hola" }` devuelve `audio/mpeg`.
+c. **Inicie la aplicación de React:**
+   ```bash
+   npm run dev
+   ```
+   La aplicación estará disponible en `http://localhost:5173`.
 
-### Speech-to-Text (STT)
-- Endpoint: `POST http://localhost:3001/api/stt`
-- Enviar `multipart/form-data` con el campo `audio` (ej. `audio/webm` del navegador)
-- Respuesta: JSON con `{ text: "..." }`
+### **3. Configuración del Entorno de IA (Python)**
 
-### Consulta ADRES (Base de Datos Única de Afiliados)
-- **Integración con Apitude**: El sistema está preparado para consultar datos de pacientes desde ADRES
-- **Endpoint**: `GET http://localhost:3001/api/pacientes/consultar-adres/:numero_documento?tipo_documento=CC`
-- **Estado**: ✅ Implementado y listo para usar cuando tengas credenciales
-- **Configuración**: 
-  1. Obtén una API key de Apitude (https://apitude.co)
-  2. Agrega `APITUDE_API_KEY=tu_api_key` en `backend/.env`
-  3. Reinicia el servidor backend
-- **Nota**: Si no hay API key configurada, el sistema mostrará un mensaje informativo y permitirá ingresar los datos manualmente
->>>>>>> 104f43e (feat(IA): TTS y STT con ElevenLabs + UI médico)
+a. **Asegúrese de tener Python instalado.**
 
-Backend: Node.js + Express + SQLite
+b. **Instale las dependencias necesarias:**
+   ```bash
+   pip install scikit-learn numpy
+   ```
+   El `aiService.js` del backend buscará un ejecutable de Python y validará que estas librerías estén disponibles para usar el endpoint de predicción.
 
-Base de Datos: SQLite con 16 tablas
+---
 
-Herramientas: DBeaver para gestión de BD
+## ⚠️ Puntos Importantes y Advertencias
 
-📊 Estado del Proyecto
-✅ Completado
-Estructura de base de datos completa (16 tablas)
+- **Seguridad de Autenticación**: La versión actual del endpoint de login (`/api/auth/login`) es **insegura**. Compara contraseñas en texto plano. Se recomienda encarecidamente no utilizar este sistema en producción sin una refactorización completa del sistema de autenticación para usar hashes de contraseña (ej. `bcrypt`).
+- **Búsqueda de Terminología Médica**: La funcionalidad de búsqueda de códigos CIE-10 (`/api/terminology/cie10`) está actualmente **deshabilitada** en el backend (`terminologyLocal.js`) y devuelve resultados vacíos.
 
-Relaciones corregidas entre entidades clínicas
+---
 
-Modelo Hub-and-Spoke implementado
+## 🗄️ Estructura de la Base de Datos
 
-Tablas derivadas correctamente asociadas
+La base de datos SQLite (`salud_digital_aps.db`) sigue un modelo relacional para almacenar toda la información del sistema. Las tablas principales incluyen:
 
-Campos requeridos para sistema médico
+- `Usuarios`, `Roles`, `Pacientes`, `Familias`
+- `Atenciones_Clinicas` (como Hub central)
+- Historias Clínicas por especialidad (ej. `HC_Medicina_General`, `HC_Psicologia`)
+- `Planes_Cuidado_Familiar` y `Demandas_Inducidas`
+- `Recetas_Medicas` y `Ordenes_Laboratorio`
 
-Base de datos validada y funcionando
-
-Subido a Backend de render
+Para un esquema detallado, consulte los scripts de creación en `backend/database/`.
