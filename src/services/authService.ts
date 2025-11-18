@@ -301,6 +301,22 @@ export class AuthService {
     }
   }
 
+  static async getPacienteResumenClinico(pacienteId: number) {
+    try {
+      const response = await fetch(`${API_URL}/pacientes/${pacienteId}/resumen-clinico`);
+      if (response.status === 404) {
+        return null;
+      }
+      if (!response.ok) {
+        throw new Error('Error obteniendo resumen clínico');
+      }
+      return response.json();
+    } catch (error) {
+      console.error('Error en getPacienteResumenClinico:', error);
+      throw error;
+    }
+  }
+
   // ==================== MÉTODOS DE PLANES DE CUIDADO ====================
 
   static async getPlanesCuidadoPaciente(pacienteId: number) {

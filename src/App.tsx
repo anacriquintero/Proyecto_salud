@@ -3984,7 +3984,26 @@ function BDPacientesView({ deviceType, onSelectPaciente }: any) {
   const [resultados, setResultados] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<any>(null);
+  const [selectedFamily, setSelectedFamily] = useState<any>(null);
+  const [resumenClinico, setResumenClinico] = useState<any>(null);
+  const [resumenLoading, setResumenLoading] = useState(false);
+  const [resumenError, setResumenError] = useState<string | null>(null);
   const searchTimeoutRef = React.useRef<any>(null);
+
+  const loadResumenClinico = async (pacienteId: number) => {
+    try {
+      setResumenLoading(true);
+      setResumenError(null);
+      const resumen = await AuthService.getPacienteResumenClinico(pacienteId);
+      setResumenClinico(resumen);
+    } catch (error) {
+      console.error('Error cargando resumen clínico:', error);
+      setResumenClinico(null);
+      setResumenError('No se pudo cargar el resumen clínico');
+    } finally {
+      setResumenLoading(false);
+    }
+  };
   
   const handleSelectPaciente = async (paciente: any) => {
     try {
@@ -4000,10 +4019,10 @@ function BDPacientesView({ deviceType, onSelectPaciente }: any) {
       };
       
       setSelectedPatient(paciente);
-      
-      if (onSelectPaciente) {
-        onSelectPaciente(paciente, familiaData);
-      }
+      setSelectedFamily(familiaData);
+      setResumenClinico(null);
+      setResumenError(null);
+      loadResumenClinico(paciente.paciente_id);
     } catch (error) {
       console.error('Error cargando familia:', error);
       alert('Error al cargar datos de la familia');
@@ -4134,6 +4153,192 @@ function BDPacientesView({ deviceType, onSelectPaciente }: any) {
           </div>
         </ResponsiveCard>
       ) : null}
+
+      {selectedPatient && (
+        <ResponsiveCard>
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <div>
+                <h4 className="text-base font-semibold text-stone-900">
+                  Resumen clínico de {selectedPatient.primer_nombre} {selectedPatient.primer_apellido}
+                </h4>
+                <p className="text-sm text-stone-500">
+                  {selectedPatient.tipo_documento} {selectedPatient.numero_documento}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {onSelectPaciente && selectedFamily && (
+                  <ResponsiveButton
+                    size="sm"
+                    onClick={() => onSelectPaciente(selectedPatient, selectedFamily)}
+                  >
+                    Ver detalle completo
+                  </ResponsiveButton>
+                )}
+                <ResponsiveButton
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setSelectedPatient(null);
+                    setSelectedFamily(null);
+                    setResumenClinico(null);
+                    setResumenError(null);
+                  }}
+                >
+                  Cerrar resumen
+                </ResponsiveButton>
+              </div>
+            </div>
+
+            {resumenLoading ? (
+              <div className="text-center py-8 text-sm text-stone-500">
+                Cargando resumen clínico...
+              </div>
+            ) : resumenError ? (
+              <div className="text-sm text-red-600">{resumenError}</div>
+            ) : resumenClinico ? (
+              <PacienteResumenClinico resumen={resumenClinico} deviceType={deviceType} />
+            ) : (
+              <div className="text-sm text-stone-500">
+                No hay información clínica consolidada para este paciente.
+              </div>
+            )}
+          </div>
+        </ResponsiveCard>
+      )}
+    </div>
+  );
+}
+
+function PacienteResumenClinico({ resumen, deviceType }: any) {
+  if (!resumen) return null;
+
+  const formatDate = (value?: string | null) => {
+    if (!value) return 'Sin registro';
+    try {
+      return new Date(value).toLocaleDateString('es-ES', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+      });
+    } catch {
+      return value;
+    }
+  };
+
+  const ultimaConsulta = resumen.ultima_consulta;
+  const signos = ultimaConsulta?.signos_vitales || {};
+  const gridCols = deviceType === 'mobile' ? 'grid-cols-2' : 'grid-cols-4';
+
+  return (
+    <div className="space-y-4">
+      <div className={`grid gap-3 ${gridCols}`}>
+        <div className="p-3 bg-emerald-50 rounded-xl text-center">
+          <div className="text-xs text-emerald-700 uppercase">Consultas</div>
+          <div className="text-2xl font-bold text-emerald-900">{resumen.kpis?.total_consultas || 0}</div>
+          <div className="text-xs text-emerald-600">
+            {resumen.kpis?.ultima_atencion ? `Última: ${formatDate(resumen.kpis?.ultima_atencion)}` : 'Sin fecha'}
+          </div>
+        </div>
+        <div className="p-3 bg-sky-50 rounded-xl text-center">
+          <div className="text-xs text-sky-700 uppercase">Planes activos</div>
+          <div className="text-2xl font-bold text-sky-900">{resumen.kpis?.planes_activos || 0}</div>
+        </div>
+        <div className="p-3 bg-amber-50 rounded-xl text-center">
+          <div className="text-xs text-amber-700 uppercase">Demandas pendientes</div>
+          <div className="text-2xl font-bold text-amber-900">{resumen.kpis?.demandas_pendientes || 0}</div>
+        </div>
+        <div className="p-3 bg-stone-50 rounded-xl text-center">
+          <div className="text-xs text-stone-500 uppercase">Riesgo familiar</div>
+          <div className="text-base font-semibold text-stone-800">{resumen.kpis?.riesgo_familiar || 'No evaluado'}</div>
+        </div>
+      </div>
+
+      <div className="border border-sinbad-200 rounded-2xl p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <h5 className="text-sm font-semibold text-stone-900">Última consulta</h5>
+          <span className="text-xs text-stone-500">{formatDate(ultimaConsulta?.fecha_atencion)}</span>
+        </div>
+        {ultimaConsulta ? (
+          <div className="space-y-2">
+            <div className="text-sm text-stone-700">
+              <span className="font-medium text-stone-900">Motivo:</span> {ultimaConsulta.motivo_consulta || 'Sin especificar'}
+            </div>
+            <div className="text-sm text-stone-700 flex flex-wrap gap-2">
+              <ResponsiveBadge tone="health">{ultimaConsulta.diagnosticos_cie10 || 'S/D'}</ResponsiveBadge>
+              {ultimaConsulta.profesional && (
+                <ResponsiveBadge tone="admin">{ultimaConsulta.profesional}</ResponsiveBadge>
+              )}
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs text-stone-500">
+              <div>
+                TA:{' '}
+                {ultimaConsulta.tension_arterial_sistolica && ultimaConsulta.tension_arterial_diastolica
+                  ? `${ultimaConsulta.tension_arterial_sistolica}/${ultimaConsulta.tension_arterial_diastolica}`
+                  : signos?.tension || 'N/A'}
+              </div>
+              <div>FC: {ultimaConsulta.frecuencia_cardiaca || signos?.fc || 'N/A'}</div>
+              <div>FR: {ultimaConsulta.frecuencia_respiratoria || signos?.fr || 'N/A'}</div>
+              <div>SPO₂: {ultimaConsulta.saturacion_oxigeno || signos?.spo2 || 'N/A'}</div>
+            </div>
+          </div>
+        ) : (
+          <div className="text-sm text-stone-500">Sin consultas registradas.</div>
+        )}
+      </div>
+
+      <div className="border border-sinbad-200 rounded-2xl p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <h5 className="text-sm font-semibold text-stone-900">Diagnósticos frecuentes</h5>
+        </div>
+        {resumen.diagnosticos_frecuentes?.length ? (
+          <div className="space-y-2">
+            {resumen.diagnosticos_frecuentes.map((diag: any, idx: number) => (
+              <div key={`${diag.diagnostico}-${idx}`} className="flex items-center justify-between text-sm">
+                <span className="text-stone-700">{diag.diagnostico}</span>
+                <ResponsiveBadge tone="health">{diag.frecuencia}</ResponsiveBadge>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-sm text-stone-500">No hay diagnósticos registrados.</div>
+        )}
+      </div>
+
+      <div className={`grid gap-3 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-2'}`}>
+        <div className="border border-sinbad-200 rounded-2xl p-4 space-y-3">
+          <h5 className="text-sm font-semibold text-stone-900">Planes activos</h5>
+          {resumen.planes_activos?.length ? (
+            resumen.planes_activos.slice(0, 2).map((plan: any) => (
+              <div key={plan.plan_id} className="p-3 bg-stone-50 rounded-xl space-y-1">
+                <div className="text-xs text-stone-500">{formatDate(plan.fecha_entrega)}</div>
+                <div className="text-sm font-medium text-stone-900">{plan.condicion_identificada || 'Sin condición'}</div>
+                <div className="text-xs text-stone-500">Profesional: {plan.profesional || 'No asignado'}</div>
+              </div>
+            ))
+          ) : (
+            <div className="text-sm text-stone-500">No hay planes vigentes.</div>
+          )}
+        </div>
+        <div className="border border-sinbad-200 rounded-2xl p-4 space-y-3">
+          <h5 className="text-sm font-semibold text-stone-900">Demandas pendientes</h5>
+          {resumen.demandas_pendientes?.length ? (
+            resumen.demandas_pendientes.map((demanda: any) => (
+              <div key={demanda.demanda_id} className="p-3 bg-janna-50 rounded-xl space-y-1">
+                <div className="flex items-center justify-between text-xs text-stone-500">
+                  <span>{formatDate(demanda.fecha_demanda)}</span>
+                  <ResponsiveBadge tone="warning">{demanda.estado}</ResponsiveBadge>
+                </div>
+                <div className="text-sm text-stone-700">
+                  Formulario {demanda.numero_formulario || demanda.demanda_id}
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="text-sm text-stone-500">Sin demandas pendientes.</div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -4141,15 +4346,18 @@ function BDPacientesView({ deviceType, onSelectPaciente }: any) {
 function DashboardEpidemioView({ deviceType }: any) {
   const [dashboard, setDashboard] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const loadDashboard = async () => {
       try {
         setLoading(true);
+        setError(null);
         const data = await AuthService.getDashboardEpidemio();
         setDashboard(data);
-      } catch (error) {
-        console.error('Error cargando dashboard:', error);
+      } catch (err) {
+        console.error('Error cargando dashboard:', err);
+        setError('No se pudo cargar el dashboard epidemiológico');
       } finally {
         setLoading(false);
       }
@@ -4157,6 +4365,15 @@ function DashboardEpidemioView({ deviceType }: any) {
 
     loadDashboard();
   }, []);
+
+  const renderBar = (value: number, max: number, tone = 'bg-emerald-500') => {
+    const percent = max ? Math.max((value / max) * 100, 5) : 0;
+    return (
+      <div className="w-full h-2 bg-sinbad-100 rounded-full overflow-hidden">
+        <div className={`h-full ${tone}`} style={{ width: `${percent}%` }}></div>
+      </div>
+    );
+  };
 
   if (loading) {
     return (
@@ -4169,55 +4386,200 @@ function DashboardEpidemioView({ deviceType }: any) {
     );
   }
 
+  if (error) {
+    return (
+      <ResponsiveCard>
+        <div className="text-center py-8 text-red-600 text-sm">{error}</div>
+      </ResponsiveCard>
+    );
+  }
+
+  if (!dashboard) {
+    return (
+      <ResponsiveCard>
+        <div className="text-center py-8 text-stone-500 text-sm">
+          No hay datos disponibles
+        </div>
+      </ResponsiveCard>
+    );
+  }
+
+  const generoMax = Math.max(...(dashboard.poblacion_genero || []).map((g: any) => g.total || 0), 1);
+  const etariaMax = Math.max(...(dashboard.poblacion_etaria || []).map((g: any) => g.total || 0), 1);
+  const diagCronicosMax = Math.max(...(dashboard.diagnosticos_cronicos || []).map((d: any) => d.total || 0), 1);
+  const riesgoMax = Math.max(...(dashboard.riesgo_familiar || []).map((r: any) => r.total || 0), 1);
+  const gruposMax = Math.max(...(dashboard.grupos_poblacionales || []).map((g: any) => g.total || 0), 1);
+  const tendenciaMax = Math.max(...(dashboard.tendencia_atenciones || []).map((t: any) => t.total || 0), 1);
+
   return (
     <div className="space-y-4 md:space-y-6">
       <ResponsiveCard>
         <h3 className="font-semibold text-stone-900 mb-4">Dashboard Epidemiológico</h3>
-        
-        {dashboard ? (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="p-4 bg-stone-50 rounded-lg text-center">
-                <div className="text-2xl font-bold text-emerald-600">{dashboard.total_familias || 0}</div>
-                <div className="text-xs text-stone-600">Familias</div>
-              </div>
-              <div className="p-4 bg-stone-50 rounded-lg text-center">
-                <div className="text-2xl font-bold text-blue-600">{dashboard.total_pacientes || 0}</div>
-                <div className="text-xs text-stone-600">Pacientes</div>
-              </div>
+        <div className={`grid gap-4 ${deviceType === 'mobile' ? 'grid-cols-2' : 'grid-cols-4'}`}>
+          {[
+            { label: 'Familias activas', value: dashboard.total_familias, tone: 'text-emerald-600' },
+            { label: 'Pacientes activos', value: dashboard.total_pacientes, tone: 'text-sky-600' },
+            { label: 'Atenciones históricas', value: dashboard.total_atenciones, tone: 'text-purple-600' },
+            { label: 'Atenciones este mes', value: dashboard.atenciones_mes, tone: 'text-orange-600' }
+          ].map((card, idx) => (
+            <div key={idx} className="p-4 bg-stone-50 rounded-xl text-center shadow-inner border border-sinbad-100">
+              <div className={`text-2xl font-bold ${card.tone}`}>{card.value || 0}</div>
+              <div className="text-xs text-stone-500 uppercase tracking-wide">{card.label}</div>
             </div>
-            
-            <div className="grid grid-cols-2 gap-4">
-              <div className="p-4 bg-stone-50 rounded-lg text-center">
-                <div className="text-2xl font-bold text-purple-600">{dashboard.total_atenciones || 0}</div>
-                <div className="text-xs text-stone-600">Total Atenciones</div>
+          ))}
+        </div>
+      </ResponsiveCard>
+
+      <div className={`grid gap-4 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-2'}`}>
+        <ResponsiveCard>
+          <h4 className="font-semibold text-stone-900 mb-4">Distribución por género</h4>
+          <div className="space-y-3">
+            {(dashboard.poblacion_genero || []).map((item: any) => (
+              <div key={item.genero} className="space-y-1">
+                <div className="flex justify-between text-sm text-stone-700">
+                  <span>{item.genero}</span>
+                  <span className="font-medium">{item.total}</span>
               </div>
-              <div className="p-4 bg-stone-50 rounded-lg text-center">
-                <div className="text-2xl font-bold text-orange-600">{dashboard.atenciones_mes || 0}</div>
-                <div className="text-xs text-stone-600">Este Mes</div>
+                {renderBar(item.total, generoMax, 'bg-bondi-blue')}
               </div>
+            ))}
+            </div>
+        </ResponsiveCard>
+
+        <ResponsiveCard>
+          <h4 className="font-semibold text-stone-900 mb-4">Distribución etaria</h4>
+          <div className="space-y-3">
+            {(dashboard.poblacion_etaria || []).map((item: any) => (
+              <div key={item.grupo} className="space-y-1">
+                <div className="flex justify-between text-sm text-stone-700">
+                  <span>{item.grupo}</span>
+                  <span className="font-medium">{item.total}</span>
+              </div>
+                {renderBar(item.total, etariaMax, 'bg-emerald-500')}
+              </div>
+            ))}
+          </div>
+        </ResponsiveCard>
             </div>
 
-            {dashboard.diagnosticos_frecuentes && dashboard.diagnosticos_frecuentes.length > 0 && (
-              <div>
-                <h4 className="font-medium text-stone-900 mb-3">Diagnósticos Más Frecuentes</h4>
+      <div className={`grid gap-4 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-2'}`}>
+        <ResponsiveCard>
+          <h4 className="font-semibold text-stone-900 mb-4">Diagnósticos frecuentes</h4>
+          {dashboard.diagnosticos_frecuentes?.length ? (
                 <div className="space-y-2">
-                  {dashboard.diagnosticos_frecuentes.slice(0, 5).map((diag: any, idx: number) => (
-                    <div key={idx} className="p-3 bg-stone-50 rounded-lg flex items-center justify-between">
-                      <span className="text-sm text-stone-900">{diag.diagnosticos_cie10 || 'N/A'}</span>
+              {dashboard.diagnosticos_frecuentes.slice(0, 6).map((diag: any, idx: number) => (
+                <div key={`${diag.diagnosticos_cie10}-${idx}`} className="p-3 bg-stone-50 rounded-xl flex items-center justify-between">
+                  <span className="text-sm text-stone-800">{diag.diagnosticos_cie10 || 'N/A'}</span>
                       <ResponsiveBadge tone="health">{diag.frecuencia}</ResponsiveBadge>
                     </div>
                   ))}
                 </div>
+          ) : (
+            <div className="text-sm text-stone-500">Sin diagnósticos registrados.</div>
+          )}
+        </ResponsiveCard>
+
+        <ResponsiveCard>
+          <h4 className="font-semibold text-stone-900 mb-4">Prevalencia de crónicos</h4>
+          <div className="space-y-3">
+            {(dashboard.diagnosticos_cronicos || []).map((cat: any) => (
+              <div key={cat.categoria} className="space-y-1">
+                <div className="flex justify-between text-sm text-stone-700">
+                  <span>{cat.categoria}</span>
+                  <span className="font-medium">{cat.total}</span>
+          </div>
+                {renderBar(cat.total, diagCronicosMax, 'bg-purple-500')}
+          </div>
+            ))}
+          </div>
+        </ResponsiveCard>
+      </div>
+
+      <div className={`grid gap-4 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-3'}`}>
+        <ResponsiveCard>
+          <h4 className="font-semibold text-stone-900 mb-4">Riesgo familiar</h4>
+          <div className="space-y-3">
+            {(dashboard.riesgo_familiar || []).map((item: any) => (
+              <div key={item.riesgo} className="space-y-1">
+                <div className="flex justify-between text-sm">
+                  <span className="text-stone-700">{item.riesgo}</span>
+                  <span className="font-medium">{item.total}</span>
+                </div>
+                {renderBar(item.total, riesgoMax, 'bg-amber-500')}
               </div>
-            )}
+            ))}
           </div>
-        ) : (
-          <div className="text-center py-8 text-stone-500 text-sm">
-            No hay datos disponibles
+        </ResponsiveCard>
+        <ResponsiveCard>
+          <h4 className="font-semibold text-stone-900 mb-4">Grupos poblacionales</h4>
+          <div className="space-y-3 max-h-64 overflow-auto pr-1">
+            {(dashboard.grupos_poblacionales || []).map((item: any) => (
+              <div key={item.grupo} className="space-y-1">
+                <div className="flex justify-between text-sm text-stone-700">
+                  <span>{item.grupo}</span>
+                  <span className="font-medium">{item.total}</span>
+                </div>
+                {renderBar(item.total, gruposMax, 'bg-sky-500')}
+              </div>
+            ))}
           </div>
+        </ResponsiveCard>
+        <ResponsiveCard>
+          <h4 className="font-semibold text-stone-900 mb-4">Condiciones sensibles</h4>
+          <div className="space-y-3">
+            <div className="p-3 bg-stone-50 rounded-xl">
+              <div className="text-xs uppercase text-stone-500">Personas con discapacidad</div>
+              <div className="text-2xl font-bold text-stone-800">{dashboard.condiciones_sensibles?.con_discapacidad || 0}</div>
+            </div>
+            <div className="p-3 bg-stone-50 rounded-xl">
+              <div className="text-xs uppercase text-stone-500">Víctimas de violencia</div>
+              <div className="text-2xl font-bold text-stone-800">{dashboard.condiciones_sensibles?.victimas_violencia || 0}</div>
+            </div>
+          </div>
+        </ResponsiveCard>
+      </div>
+
+      <div className={`grid gap-4 ${deviceType === 'mobile' ? 'grid-cols-1' : 'grid-cols-[1.2fr_1fr]'}`}>
+        <ResponsiveCard>
+          <h4 className="font-semibold text-stone-900 mb-4">Cobertura territorial (Top 5)</h4>
+          <div className="space-y-3">
+            {(dashboard.cobertura_municipio || []).map((mun: any) => (
+              <div key={mun.municipio} className="p-3 rounded-xl border border-sinbad-100">
+                <div className="flex items-center justify-between text-sm text-stone-700 mb-1">
+                  <span>{mun.municipio}</span>
+                  <ResponsiveBadge tone="admin">{mun.familias} familias</ResponsiveBadge>
+                </div>
+                <div className="text-xs text-stone-500 mb-1">Pacientes: {mun.pacientes}</div>
+                {renderBar(mun.pacientes, dashboard.total_pacientes || mun.pacientes || 1, 'bg-emerald-500')}
+              </div>
+            ))}
+          </div>
+        </ResponsiveCard>
+
+        <ResponsiveCard>
+          <h4 className="font-semibold text-stone-900 mb-4">Tendencia mensual de atenciones</h4>
+          {dashboard.tendencia_atenciones?.length ? (
+            <div className="flex items-end gap-2 h-36">
+              {dashboard.tendencia_atenciones.map((item: any) => (
+                <div key={item.periodo} className="flex-1 flex flex-col items-center gap-2">
+                  <div
+                    className="w-full bg-bondi-blue/30 rounded-t-lg"
+                    style={{
+                      height: `${Math.max((item.total / tendenciaMax) * 100, 5)}%`
+                    }}
+                  ></div>
+                  <div className="text-xs text-stone-500 text-center">
+                    {item.periodo?.split('-')[1]}/{item.periodo?.split('-')[0]?.slice(2)}
+                  </div>
+                  <div className="text-xs font-medium text-stone-700">{item.total}</div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-sm text-stone-500">Sin datos suficientes.</div>
         )}
       </ResponsiveCard>
+      </div>
     </div>
   );
 }

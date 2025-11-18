@@ -1585,6 +1585,247 @@ app.get('/api/familias/:id/caracterizacion', (req, res) => {
   });
 });
 
+// Obtener resumen clínico consolidado de un paciente
+app.get('/api/pacientes/:id/resumen-clinico', async (req, res) => {
+  const pacienteId = parseInt(req.params.id, 10);
+
+  if (isNaN(pacienteId)) {
+    return res.status(400).json({ error: 'ID de paciente inválido' });
+  }
+
+  const dbGet = (query, params = []) =>
+    new Promise((resolve, reject) => {
+      db.get(query, params, (err, row) => (err ? reject(err) : resolve(row)));
+    });
+
+  const dbAll = (query, params = []) =>
+    new Promise((resolve, reject) => {
+      db.all(query, params, (err, rows) => (err ? reject(err) : resolve(rows)));
+    });
+
+  const parseJSON = (value, fallback) => {
+    if (!value) return fallback;
+    if (typeof value === 'object') return value;
+    try {
+      return JSON.parse(value);
+    } catch (e) {
+      console.warn('JSON parse error en resumen clínico:', e?.message);
+      return fallback;
+    }
+  };
+
+  try {
+    const pacienteQuery = `
+      SELECT 
+        p.*,
+        f.apellido_principal AS familia_apellido,
+        f.direccion AS familia_direccion,
+        f.barrio_vereda AS familia_barrio,
+        f.municipio AS familia_municipio,
+        f.telefono_contacto,
+        f.riesgo_familiar,
+        f.numero_ficha,
+        f.zona,
+        f.tipo_familia,
+        f.info_vivienda,
+        f.condiciones_salud_publica
+      FROM Pacientes p
+      LEFT JOIN Familias f ON p.familia_id = f.familia_id
+      WHERE p.paciente_id = ?
+    `;
+
+    const caracterizacionQuery = `
+      SELECT *
+      FROM Caracterizacion_Paciente
+      WHERE paciente_id = ?
+      ORDER BY fecha_caracterizacion DESC, caracterizacion_paciente_id DESC
+      LIMIT 1
+    `;
+
+    const consultasRecientesQuery = `
+      SELECT
+        ac.atencion_id,
+        ac.fecha_atencion,
+        ac.estado,
+        u.nombre_completo AS profesional,
+        hc.motivo_consulta,
+        hc.diagnosticos_cie10,
+        hc.plan_manejo,
+        hc.signos_vitales,
+        hc.tension_arterial_sistolica,
+        hc.tension_arterial_diastolica,
+        hc.frecuencia_cardiaca,
+        hc.frecuencia_respiratoria,
+        hc.saturacion_oxigeno,
+        hc.temperatura,
+        hc.peso,
+        hc.talla,
+        hc.imc
+      FROM Atenciones_Clinicas ac
+      LEFT JOIN HC_Medicina_General hc ON hc.atencion_id = ac.atencion_id
+      LEFT JOIN Usuarios u ON ac.usuario_id = u.usuario_id
+      WHERE ac.paciente_id = ?
+      ORDER BY ac.fecha_atencion DESC
+      LIMIT 5
+    `;
+
+    const diagnosticosFrecuentesQuery = `
+      SELECT 
+        hc.diagnosticos_cie10 AS diagnostico,
+        COUNT(*) AS frecuencia
+      FROM HC_Medicina_General hc
+      JOIN Atenciones_Clinicas ac ON hc.atencion_id = ac.atencion_id
+      WHERE ac.paciente_id = ?
+        AND hc.diagnosticos_cie10 IS NOT NULL
+        AND TRIM(hc.diagnosticos_cie10) != ''
+      GROUP BY hc.diagnosticos_cie10
+      ORDER BY frecuencia DESC
+      LIMIT 5
+    `;
+
+    const planesActivosQuery = `
+      SELECT 
+        pcf.plan_id,
+        pcf.fecha_entrega,
+        pcf.estado,
+        pcf.condicion_identificada,
+        pcf.logro_salud,
+        pcf.cuidados_salud,
+        pcf.demandas_inducidas_desc,
+        pcf.educacion_salud,
+        u.nombre_completo AS profesional
+      FROM Planes_Cuidado_Familiar pcf
+      LEFT JOIN Usuarios u ON pcf.creado_por_uid = u.usuario_id
+      WHERE pcf.paciente_principal_id = ?
+        AND (pcf.estado IS NULL OR pcf.estado IN ('Activo', 'En seguimiento', 'En proceso'))
+      ORDER BY pcf.fecha_entrega DESC
+      LIMIT 5
+    `;
+
+    const demandasPendientesQuery = `
+      SELECT 
+        demanda_id,
+        numero_formulario,
+        fecha_demanda,
+        estado,
+        diligenciamiento,
+        remision_a,
+        asignado_a_uid,
+        seguimiento
+      FROM Demandas_Inducidas
+      WHERE paciente_id = ?
+        AND estado IN ('Pendiente', 'Asignada')
+      ORDER BY fecha_demanda DESC
+      LIMIT 5
+    `;
+
+    const [
+      paciente,
+      caracterizacion,
+      consultasRecientes,
+      diagnosticosFrecuentes,
+      planesActivos,
+      demandasPendientes,
+      kpiConsultas,
+      kpiDemandas,
+      kpiPlanes
+    ] = await Promise.all([
+      dbGet(pacienteQuery, [pacienteId]),
+      dbGet(caracterizacionQuery, [pacienteId]),
+      dbAll(consultasRecientesQuery, [pacienteId]),
+      dbAll(diagnosticosFrecuentesQuery, [pacienteId]),
+      dbAll(planesActivosQuery, [pacienteId]),
+      dbAll(demandasPendientesQuery, [pacienteId]),
+      dbGet(
+        `
+          SELECT 
+            COUNT(*) AS total_consultas,
+            MAX(fecha_atencion) AS ultima_atencion
+          FROM Atenciones_Clinicas
+          WHERE paciente_id = ?
+        `,
+        [pacienteId]
+      ),
+      dbGet(
+        `
+          SELECT COUNT(*) AS total
+          FROM Demandas_Inducidas
+          WHERE paciente_id = ?
+            AND estado IN ('Pendiente', 'Asignada')
+        `,
+        [pacienteId]
+      ),
+      dbGet(
+        `
+          SELECT COUNT(*) AS total
+          FROM Planes_Cuidado_Familiar
+          WHERE paciente_principal_id = ?
+            AND (estado IS NULL OR estado IN ('Activo', 'En seguimiento', 'En proceso'))
+        `,
+        [pacienteId]
+      )
+    ]);
+
+    if (!paciente) {
+      return res.status(404).json({ error: 'Paciente no encontrado' });
+    }
+
+    const pacienteProcesado = {
+      ...paciente,
+      info_vivienda: parseJSON(paciente.info_vivienda, {}),
+      condiciones_salud_publica: parseJSON(paciente.condiciones_salud_publica, {})
+    };
+
+    const caracterizacionProcesada = caracterizacion
+      ? {
+          ...caracterizacion,
+          discapacidad: parseJSON(caracterizacion.discapacidad, []),
+          datos_pyp: parseJSON(caracterizacion.datos_pyp, {}),
+          datos_salud: parseJSON(caracterizacion.datos_salud, {})
+        }
+      : null;
+
+    const consultasProcesadas = (consultasRecientes || []).map((consulta) => ({
+      ...consulta,
+      signos_vitales: parseJSON(consulta.signos_vitales, null)
+    }));
+
+    const planesProcesados = (planesActivos || []).map((plan) => ({
+      ...plan,
+      demandas_inducidas_desc: parseJSON(plan.demandas_inducidas_desc, []),
+      educacion_salud: parseJSON(plan.educacion_salud, [])
+    }));
+
+    const demandasProcesadas = (demandasPendientes || []).map((demanda) => ({
+      ...demanda,
+      diligenciamiento: parseJSON(demanda.diligenciamiento, []),
+      remision_a: parseJSON(demanda.remision_a, []),
+      seguimiento: parseJSON(demanda.seguimiento, {})
+    }));
+
+    res.json({
+      paciente: pacienteProcesado,
+      caracterizacion: caracterizacionProcesada,
+      consultas_recientes: consultasProcesadas,
+      ultima_consulta: consultasProcesadas[0] || null,
+      diagnosticos_frecuentes: diagnosticosFrecuentes || [],
+      planes_activos: planesProcesados,
+      demandas_pendientes: demandasProcesadas,
+      kpis: {
+        total_consultas: kpiConsultas?.total_consultas || 0,
+        ultima_atencion: kpiConsultas?.ultima_atencion || null,
+        demandas_pendientes: kpiDemandas?.total || 0,
+        planes_activos: kpiPlanes?.total || 0,
+        riesgo_familiar: paciente.riesgo_familiar || null,
+        grupo_poblacional: caracterizacionProcesada?.grupo_poblacional || null
+      }
+    });
+  } catch (error) {
+    console.error('Error construyendo resumen clínico:', error);
+    res.status(500).json({ error: 'Error obteniendo resumen clínico' });
+  }
+});
+
 // ==================== ENDPOINTS DE PLANES DE CUIDADO ====================
 
 // Obtener planes de cuidado por paciente
@@ -2392,66 +2633,159 @@ app.get('/api/usuarios/:id/resumen-actividad', (req, res) => {
 });
 
 // Dashboard epidemiológico
-app.get('/api/dashboard/epidemio', (req, res) => {
-  // Estadísticas generales para el dashboard epidemiológico
-  const queries = {
-    totalFamilias: 'SELECT COUNT(*) as total FROM Familias',
-    totalPacientes: 'SELECT COUNT(*) as total FROM Pacientes WHERE activo = 1',
-    totalAtenciones: 'SELECT COUNT(*) as total FROM Atenciones_Clinicas',
-    atencionesMes: `
+app.get('/api/dashboard/epidemio', async (req, res) => {
+  const dbGet = (query, params = []) =>
+    new Promise((resolve, reject) => {
+      db.get(query, params, (err, row) => (err ? reject(err) : resolve(row)));
+    });
+
+  const dbAll = (query, params = []) =>
+    new Promise((resolve, reject) => {
+      db.all(query, params, (err, rows) => (err ? reject(err) : resolve(rows)));
+    });
+
+  try {
+    const [
+      totalFamilias,
+      totalPacientes,
+      totalAtenciones,
+      atencionesMes,
+      diagnosticosFrecuentes,
+      poblacionGenero,
+      poblacionEtaria,
+      diagnosticosCronicos,
+      riesgoFamiliar,
+      gruposPoblacionales,
+      condicionesSensibles,
+      coberturaMunicipio,
+      tendenciaAtenciones
+    ] = await Promise.all([
+      dbGet('SELECT COUNT(*) as total FROM Familias'),
+      dbGet('SELECT COUNT(*) as total FROM Pacientes WHERE activo = 1'),
+      dbGet('SELECT COUNT(*) as total FROM Atenciones_Clinicas'),
+      dbGet(`
       SELECT COUNT(*) as total 
       FROM Atenciones_Clinicas 
       WHERE fecha_atencion >= date('now', 'start of month')
-    `,
-    diagnosticosFrecuentes: `
+      `),
+      dbAll(`
       SELECT diagnosticos_cie10, COUNT(*) as frecuencia
       FROM HC_Medicina_General
       WHERE diagnosticos_cie10 IS NOT NULL AND diagnosticos_cie10 != ''
       GROUP BY diagnosticos_cie10
       ORDER BY frecuencia DESC
       LIMIT 10
-    `
-  };
+      `),
+      dbAll(`
+        SELECT 
+          COALESCE(genero, 'No reportado') AS genero,
+          COUNT(*) AS total
+        FROM Pacientes
+        WHERE activo = 1
+        GROUP BY COALESCE(genero, 'No reportado')
+      `),
+      dbAll(`
+        SELECT grupo, COUNT(*) as total FROM (
+          SELECT 
+            CASE
+              WHEN fecha_nacimiento IS NULL THEN 'Sin dato'
+              WHEN (julianday('now') - julianday(fecha_nacimiento)) / 365.25 < 6 THEN '0-5 años'
+              WHEN (julianday('now') - julianday(fecha_nacimiento)) / 365.25 < 18 THEN '6-17 años'
+              WHEN (julianday('now') - julianday(fecha_nacimiento)) / 365.25 < 60 THEN '18-59 años'
+              ELSE '60+ años'
+            END AS grupo
+          FROM Pacientes
+          WHERE activo = 1
+        ) 
+        GROUP BY grupo
+      `),
+      dbAll(`
+        SELECT categoria, COUNT(*) as total FROM (
+          SELECT
+            CASE
+              WHEN upper(hc.diagnosticos_cie10) LIKE 'I%' THEN 'Cardiovasculares'
+              WHEN upper(hc.diagnosticos_cie10) LIKE 'E1%' THEN 'Metabólicas'
+              WHEN upper(hc.diagnosticos_cie10) LIKE 'J%' THEN 'Respiratorias'
+              WHEN upper(hc.diagnosticos_cie10) LIKE 'F%' THEN 'Salud mental'
+              ELSE 'Otros crónicos'
+            END AS categoria
+          FROM HC_Medicina_General hc
+          JOIN Atenciones_Clinicas ac ON hc.atencion_id = ac.atencion_id
+          WHERE hc.diagnosticos_cie10 IS NOT NULL AND TRIM(hc.diagnosticos_cie10) != ''
+        )
+        GROUP BY categoria
+      `),
+      dbAll(`
+        SELECT 
+          COALESCE(riesgo_familiar, 'Sin definir') AS riesgo,
+          COUNT(*) AS total
+        FROM Familias
+        GROUP BY COALESCE(riesgo_familiar, 'Sin definir')
+      `),
+      dbAll(`
+        SELECT 
+          grupo_poblacional AS grupo,
+          COUNT(*) AS total
+        FROM Caracterizacion_Paciente
+        WHERE grupo_poblacional IS NOT NULL AND TRIM(grupo_poblacional) != ''
+        GROUP BY grupo_poblacional
+        ORDER BY total DESC
+      `),
+      dbGet(`
+        SELECT 
+          SUM(CASE WHEN discapacidad IS NOT NULL AND TRIM(discapacidad) != '' AND TRIM(discapacidad) != '[]' THEN 1 ELSE 0 END) AS con_discapacidad,
+          SUM(CASE WHEN victima_violencia = 1 THEN 1 ELSE 0 END) AS victimas_violencia
+        FROM Caracterizacion_Paciente
+      `),
+      dbAll(`
+        SELECT 
+          COALESCE(f.municipio, 'Sin municipio') AS municipio,
+          COUNT(DISTINCT f.familia_id) AS familias,
+          COUNT(p.paciente_id) AS pacientes
+        FROM Familias f
+        LEFT JOIN Pacientes p ON f.familia_id = p.familia_id AND p.activo = 1
+        GROUP BY COALESCE(f.municipio, 'Sin municipio')
+        ORDER BY pacientes DESC
+        LIMIT 5
+      `),
+      dbAll(`
+        SELECT 
+          strftime('%Y-%m', fecha_atencion) AS periodo,
+          COUNT(*) AS total
+        FROM Atenciones_Clinicas
+        WHERE fecha_atencion >= date('now', '-5 months')
+        GROUP BY strftime('%Y-%m', fecha_atencion)
+        ORDER BY periodo ASC
+      `)
+    ]);
 
-  db.serialize(() => {
-    const resultados = {};
-    let queriesCompletadas = 0;
-    const totalQueries = Object.keys(queries).length;
-
-    const procesarResultado = (key, resultado) => {
-      resultados[key] = resultado;
-      queriesCompletadas++;
-      if (queriesCompletadas === totalQueries) {
-        res.json(resultados);
-      }
+    const ordenarEtapas = (datos = []) => {
+      const orden = ['0-5 años', '6-17 años', '18-59 años', '60+ años', 'Sin dato'];
+      return datos.sort((a, b) => orden.indexOf(a.grupo) - orden.indexOf(b.grupo));
     };
 
-    // Ejecutar todas las queries
-    db.get(queries.totalFamilias, (err, row) => {
-      if (err) console.error('Error en totalFamilias:', err);
-      procesarResultado('total_familias', (row && row.total) || 0);
+    res.json({
+      total_familias: totalFamilias?.total || 0,
+      total_pacientes: totalPacientes?.total || 0,
+      total_atenciones: totalAtenciones?.total || 0,
+      atenciones_mes: atencionesMes?.total || 0,
+      diagnosticos_frecuentes: diagnosticosFrecuentes || [],
+      poblacion_genero: poblacionGenero || [],
+      poblacion_etaria: ordenarEtapas(poblacionEtaria || []),
+      diagnosticos_cronicos: diagnosticosCronicos || [],
+      riesgo_familiar: riesgoFamiliar || [],
+      grupos_poblacionales: gruposPoblacionales || [],
+      condiciones_sensibles: {
+        con_discapacidad: condicionesSensibles?.con_discapacidad || 0,
+        victimas_violencia: condicionesSensibles?.victimas_violencia || 0
+      },
+      cobertura_municipio: coberturaMunicipio || [],
+      tendencia_atenciones: tendenciaAtenciones || []
     });
-
-    db.get(queries.totalPacientes, (err, row) => {
-      if (err) console.error('Error en totalPacientes:', err);
-      procesarResultado('total_pacientes', (row && row.total) || 0);
-    });
-
-    db.get(queries.totalAtenciones, (err, row) => {
-      if (err) console.error('Error en totalAtenciones:', err);
-      procesarResultado('total_atenciones', (row && row.total) || 0);
-    });
-
-    db.get(queries.atencionesMes, (err, row) => {
-      if (err) console.error('Error en atencionesMes:', err);
-      procesarResultado('atenciones_mes', (row && row.total) || 0);
-    });
-
-    db.all(queries.diagnosticosFrecuentes, (err, rows) => {
-      if (err) console.error('Error en diagnosticosFrecuentes:', err);
-      procesarResultado('diagnosticos_frecuentes', rows || []);
-    });
-  });
+  } catch (error) {
+    console.error('Error construyendo dashboard epidemiológico:', error);
+    res.status(500).json({ error: 'Error generando dashboard epidemiológico' });
+  }
 });
 
 // Health check
