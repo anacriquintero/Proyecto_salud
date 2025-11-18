@@ -8,6 +8,7 @@ const fetch = require('node-fetch');
 const FormData = require('form-data');
 const multer = require('multer');
 const adresService = require('./services/adresService');
+const adresScraper = require('./services/adresScraperService');
 const terminologyClient = require('./services/terminologyClient');
 const fhirClient = require('./services/fhirClient');
 const aiService = require('./services/aiService');
@@ -42,7 +43,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 const upload = multer({ dest: path.join(__dirname, 'uploads') });
 
 // Conectar a SQLite (usa la ruta correcta de tu BD)
-const dbPath = 'D:\\UAO\\SEMESTRE7\\SALUD_DIGITAL\\db\\salud_digital_aps.db';
+// Preferimos la BD lista en backend/database/salud_digital_aps.db
+const defaultDbPath = path.join(__dirname, 'database', 'salud_digital_aps.db');
+const dbPath = process.env.DB_PATH || defaultDbPath;
 console.log('📊 Base de datos: ', dbPath);
 const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
@@ -3213,6 +3216,63 @@ app.get('/api/fhir/metadata', async (req, res) => {
   } catch (error) {
     console.error('❌ [FHIR] Error obteniendo CapabilityStatement:', error);
     res.status(500).json({ error: 'Error obteniendo CapabilityStatement desde FHIR', details: error.message });
+  }
+});
+
+// ==================== ENDPOINTS SCRAPER ADRES (manual) ====================
+
+// POST: Iniciar consulta vía scraper (modo interactivo: requiere captcha en consola)
+app.post('/api/adres-scraper/consultar', (req, res) => {
+  try {
+    const { numero_documento, tipo_documento } = req.body || {};
+    if (!numero_documento) {
+      return res.status(400).json({
+        success: false,
+        error: 'Número de documento es requerido',
+        message: 'Debe proporcionar un número de documento para consultar'
+      });
+    }
+    const docType = (tipo_documento || 'CC');
+    const started = adresScraper.startInteractiveConsulta(docType, String(numero_documento), { headless: false });
+
+    return res.status(202).json({
+      success: true,
+      mode: 'manual',
+      message: 'Scraper iniciado. Ingrese el captcha en la consola del servidor. Luego consulte el resultado.',
+      pid: started.pid,
+      resultPath: started.resultPath
+    });
+  } catch (error) {
+    console.error('❌ [ADRES SCRAPER] Error iniciando scraper:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Error iniciando scraper',
+      message: error.message || 'Error desconocido'
+    });
+  }
+});
+
+// GET: Obtener último resultado del scraper
+app.get('/api/adres-scraper/resultado', (req, res) => {
+  try {
+    const result = adresScraper.readLastResult();
+    if (!result) {
+      return res.status(404).json({
+        success: false,
+        message: 'No hay resultado disponible. Ejecute primero la consulta del scraper.'
+      });
+    }
+    return res.json({
+      success: true,
+      result
+    });
+  } catch (error) {
+    console.error('❌ [ADRES SCRAPER] Error leyendo resultado:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Error leyendo resultado',
+      message: error.message || 'Error desconocido'
+    });
   }
 });
 

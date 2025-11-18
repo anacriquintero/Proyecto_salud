@@ -1,10 +1,9 @@
 /**
  * Configuración centralizada de la API
- * Siempre apunta a la URL de producción
+ * Usa VITE_BACKEND_URL si está definida; por defecto http://localhost:3001
  */
 
-// URL del backend - Siempre apunta a producción
-const BACKEND_URL = 'https://salud-digital-backend.onrender.com';
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 export const API_BASE_URL = `${BACKEND_URL}/api`;
 
 // Log para debugging
@@ -12,4 +11,3 @@ console.log('🔧 Configuración API:', {
   BACKEND_URL,
   API_BASE_URL
 });
-

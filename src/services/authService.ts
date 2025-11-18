@@ -763,4 +763,38 @@ export class AuthService {
       };
     }
   }
+
+  // ==================== SCRAPER ADRES (MANUAL) ====================
+
+  static async iniciarScraperADRES(numeroDocumento: string, tipoDocumento: string = 'CC'): Promise<any> {
+    try {
+      const response = await fetch(`${API_URL}/adres-scraper/consultar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          numero_documento: numeroDocumento,
+          tipo_documento: tipoDocumento
+        })
+      });
+      return await response.json();
+    } catch (error) {
+      console.error('Error iniciando scraper ADRES:', error);
+      throw error;
+    }
+  }
+
+  static async obtenerResultadoScraperADRES(): Promise<any> {
+    try {
+      const response = await fetch(`${API_URL}/adres-scraper/resultado`);
+      if (!response.ok) {
+        if (response.status === 404) return null;
+        const err = await response.text();
+        throw new Error(err || `Error ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Error obteniendo resultado scraper ADRES:', error);
+      throw error;
+    }
+  }
 }

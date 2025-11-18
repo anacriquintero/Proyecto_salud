@@ -45,15 +45,95 @@ export const ConsultarADRESButton: React.FC<ConsultarADRESButtonProps> = ({
       } else {
         // Verificar si es un error de configuración
         if ((respuesta as any).requiere_configuracion) {
-          setEstado('error');
-          alert(
+          // Fallback: ofrecer modo manual (scraper) si no hay API key
+          const usarManual = window.confirm(
             'La integración con ADRES no está configurada.\n\n' +
-            'Para activar la consulta automática de datos:\n' +
-            '1. Obtén una API key de Apitude (https://apitude.co)\n' +
-            '2. Agrega APITUDE_API_KEY=tu_api_key en backend/.env\n' +
-            '3. Reinicia el servidor backend\n\n' +
-            'Mientras tanto, puedes ingresar los datos manualmente.'
+            '¿Deseas usar el modo manual (scraper)?\n' +
+            'Se abrirá un navegador en el servidor y te pedirá el captcha en la consola del backend.\n\n' +
+            'Presiona Aceptar para iniciar.'
           );
+          if (usarManual) {
+            try {
+              await AuthService.iniciarScraperADRES(numeroDocumento.trim(), tipoDocumento);
+              alert('Scraper iniciado. Ve a la consola del backend, escribe el captcha cuando lo pida y vuelve aquí. Intentaré obtener el resultado automáticamente.');
+              
+              // Polling del resultado por hasta 4 minutos
+              const timeoutMs = 240000;
+              const delayMs = 2000;
+              const start = Date.now();
+              let obtenido = false;
+
+              while (Date.now() - start < timeoutMs) {
+                await new Promise(r => setTimeout(r, delayMs));
+                const r: any = await AuthService.obtenerResultadoScraperADRES();
+                // Soportar ambas formas: { success:true, result:{...} } o directamente { status:'success', ... }
+                const result: any = (r && (r as any).result) ? (r as any).result : r;
+                if (result && (result.status === 'success' || (result.nombre || result.eps || result.regimen))) {
+                  // Normalizar fecha (DD/MM/YYYY -> YYYY-MM-DD) y filtrar valores ocultos (**/**/**)
+                  const normalizarFecha = (s?: string | null) => {
+                    if (!s) return null;
+                    if (s.includes('*')) return null;
+                    const v = String(s).trim();
+                    const ddmmyyyy = /^(\d{2})\/(\d{2})\/(\d{4})$/;
+                    const yyyymmdd = /^(\d{4})-(\d{2})-(\d{2})$/;
+                    const m1 = v.match(ddmmyyyy);
+                    if (m1) return `${m1[3]}-${m1[2]}-${m1[1]}`;
+                    if (yyyymmdd.test(v)) return v;
+                    return null;
+                  };
+
+                  if (result.status === 'success') {
+                    const datos = {
+                      nombres: result.nombre || '',
+                      apellidos: result.apellidos || '',
+                      tipo_documento: result.tipo_documento || tipoDocumento,
+                      numero_documento: result.documento || numeroDocumento,
+                      eps: result.eps || null,
+                      regimen: result.regimen || null,
+                      estado_afiliacion: result.estado || null,
+                      tipo_afiliado: result.tipo_afiliado || null,
+                      fecha_nacimiento: normalizarFecha(result.fecha_nacimiento) 
+                    } as DatosADRES;
+                    setEstado('success');
+                    onDatosEncontrados(datos);
+                    obtenido = true;
+                    break;
+                  }
+                  if (result.status === 'error') {
+                    setEstado('error');
+                    alert(result.message || 'Error al consultar ADRES mediante scraper');
+                    obtenido = true;
+                    break;
+                  }
+                  if (result.status === 'not_found') {
+                    setEstado('not_found');
+                    onDatosEncontrados(null);
+                    alert('No se encontró información del paciente (scraper)');
+                    obtenido = true;
+                    break;
+                  }
+                }
+              }
+
+              if (!obtenido) {
+                setEstado('error');
+                alert('No se obtuvo resultado del scraper a tiempo. Intenta nuevamente.');
+              }
+            } catch (e: any) {
+              setEstado('error');
+              alert(`No se pudo iniciar el scraper: ${e?.message || 'Error desconocido'}`);
+            }
+          } else {
+            setEstado('error');
+            alert(
+              'La integración con ADRES no está configurada.\n\n' +
+              'Para activar la consulta automática de datos:\n' +
+              '1. Obtén una API key de Apitude (https://apitude.co)\n' +
+              '2. Agrega APITUDE_API_KEY=tu_api_key en backend/.env\n' +
+              '3. Reinicia el servidor backend\n\n' +
+              'Mientras tanto, puedes ingresar los datos manualmente.'
+            );
+          }
         } else {
           setEstado('not_found');
           onDatosEncontrados(null);

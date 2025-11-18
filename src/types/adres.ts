@@ -12,6 +12,7 @@ export interface DatosADRES {
   regimen?: string;
   numero_afiliacion?: string;
   estado_afiliacion?: string;
+  tipo_afiliado?: string;
   tipo_documento?: string;
   numero_documento?: string;
 }
