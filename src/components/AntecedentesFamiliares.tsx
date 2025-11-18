@@ -52,7 +52,7 @@ export const AntecedentesFamiliares: React.FC<AntecedentesFamiliaresProps> = ({ 
   const [usandoDatosDemo, setUsandoDatosDemo] = useState(false);
 
   // URL FIJA - siempre usar Render.com
-  const API_BASE_URL = 'https://salud-digital-backend.onrender.com';
+  const API_BASE_URL = 'https://eleven-crews-clap.loca.lt';
 
   useEffect(() => {
     cargarAntecedentes();
