@@ -4,7 +4,7 @@
  */
 
 // URL del backend - Siempre apunta a producción
-const BACKEND_URL = 'https://tall-melons-stand.loca.lt';
+const BACKEND_URL = 'https://twenty-mirrors-beam.loca.lt';
 export const API_BASE_URL = `${BACKEND_URL}/api`;
 
 // Log para debugging
