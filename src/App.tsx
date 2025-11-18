@@ -831,8 +831,9 @@ function DetalleFamiliaView({ familia, onBack, onShowCaracterizacion, onShowPaci
     segundo_apellido: '',
     fecha_nacimiento: '',
     genero: 'M',
-    telefono: '',
-    email: ''
+    eps: '',
+    regimen: '',
+    tipo_afiliado: ''
   });
 
   const loadData = async () => {
@@ -864,8 +865,8 @@ function DetalleFamiliaView({ familia, onBack, onShowCaracterizacion, onShowPaci
       segundo_apellido: form.segundo_apellido || null,
       fecha_nacimiento: form.fecha_nacimiento || null,
       genero: form.genero || null,
-      telefono: form.telefono || null,
-      email: form.email || null
+      telefono: null,
+      email: null
     });
     setShowForm(false);
     await loadData();
@@ -1021,7 +1022,10 @@ function DetalleFamiliaView({ familia, onBack, onShowCaracterizacion, onShowPaci
                         segundo_nombre: nombresArray[1] || datos.segundo_nombre || '',
                         primer_apellido: apellidosArray[0] || datos.primer_apellido || '',
                         segundo_apellido: apellidosArray[1] || datos.segundo_apellido || '',
-                        fecha_nacimiento: datos.fecha_nacimiento || form.fecha_nacimiento
+                        fecha_nacimiento: datos.fecha_nacimiento || form.fecha_nacimiento,
+                        eps: (datos as any).eps || form.eps,
+                        regimen: (datos as any).regimen || form.regimen,
+                        tipo_afiliado: (datos as any).tipo_afiliado || form.tipo_afiliado
                       });
                     }
                   }}
@@ -1047,11 +1051,14 @@ function DetalleFamiliaView({ familia, onBack, onShowCaracterizacion, onShowPaci
               <ResponsiveSelect value={form.genero} onChange={(e: any) => setForm({ ...form, genero: e.target.value })}
                 options={[{value:'M',label:'Masculino'},{value:'F',label:'Femenino'}]} />
             </ResponsiveField>
-            <ResponsiveField label="Teléfono">
-              <ResponsiveInput value={form.telefono} onChange={(e: any) => setForm({ ...form, telefono: e.target.value })} />
+            <ResponsiveField label="Entidad (EPS)">
+              <ResponsiveInput value={form.eps} onChange={(e: any) => setForm({ ...form, eps: e.target.value })} />
             </ResponsiveField>
-            <ResponsiveField label="Email">
-              <ResponsiveInput value={form.email} onChange={(e: any) => setForm({ ...form, email: e.target.value })} />
+            <ResponsiveField label="Régimen">
+              <ResponsiveInput value={form.regimen} onChange={(e: any) => setForm({ ...form, regimen: e.target.value })} />
+            </ResponsiveField>
+            <ResponsiveField label="Tipo de afiliado">
+              <ResponsiveInput value={form.tipo_afiliado} onChange={(e: any) => setForm({ ...form, tipo_afiliado: e.target.value })} />
             </ResponsiveField>
           </div>
           <div className="flex gap-3 pt-4">
