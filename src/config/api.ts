@@ -4,7 +4,7 @@
  */
 
 // URL del backend - Siempre apunta a producción
-const BACKEND_URL = 'https://salud-digital-backend.onrender.com';
+const BACKEND_URL = 'https://tall-melons-stand.loca.lt';
 export const API_BASE_URL = `${BACKEND_URL}/api`;
 
 // Log para debugging
