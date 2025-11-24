@@ -43,9 +43,27 @@ app.use(express.static(path.join(__dirname, 'public')));
 const upload = multer({ dest: path.join(__dirname, 'uploads') });
 
 // Conectar a SQLite (usa la ruta correcta de tu BD)
-// Preferimos la BD lista en backend/database/salud_digital_aps.db
-const defaultDbPath = path.join(__dirname, 'database', 'salud_digital_aps.db');
-const dbPath = process.env.DB_PATH || defaultDbPath;
+// En Render, copiamos la BD a /tmp para tener permisos de escritura
+const sourceDbPath = path.join(__dirname, 'database', 'salud_digital_aps.db');
+const dbPath = process.env.DB_PATH || (() => {
+  // Si estamos en producción (Render), usar /tmp
+  if (process.env.RENDER || process.env.NODE_ENV === 'production') {
+    const tmpDbPath = '/tmp/salud_digital_aps.db';
+    // Copiar la BD a /tmp si no existe allí
+    if (!fs.existsSync(tmpDbPath) && fs.existsSync(sourceDbPath)) {
+      console.log('📋 Copiando base de datos a /tmp...');
+      try {
+        fs.copyFileSync(sourceDbPath, tmpDbPath);
+        console.log('✅ Base de datos copiada a /tmp');
+      } catch (err) {
+        console.error('❌ Error copiando BD:', err.message);
+      }
+    }
+    return tmpDbPath;
+  }
+  return sourceDbPath;
+})();
+
 console.log('📊 Base de datos: ', dbPath);
 const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
