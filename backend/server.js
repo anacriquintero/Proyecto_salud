@@ -44,46 +44,57 @@ const upload = multer({ dest: path.join(__dirname, 'uploads') });
 
 // Conectar a SQLite (usa la ruta correcta de tu BD)
 // En Render, copiamos la BD a /tmp para tener permisos de escritura
+console.log('🔧 Iniciando configuración de base de datos...');
 const sourceDbPath = path.join(__dirname, 'database', 'salud_digital_aps.db');
 const tmpDbPath = '/tmp/salud_digital_aps.db';
+
+console.log('📍 Ruta fuente:', sourceDbPath);
+console.log('📍 Ruta temporal:', tmpDbPath);
+console.log('📍 __dirname:', __dirname);
 
 // Determinar qué ruta usar
 let dbPath = process.env.DB_PATH;
 
 if (!dbPath) {
-  // Si el archivo fuente existe, intentar copiar a /tmp
-  if (fs.existsSync(sourceDbPath)) {
-    console.log('📋 Archivo fuente encontrado:', sourceDbPath);
-    
-    // Intentar copiar a /tmp si no existe allí
-    if (!fs.existsSync(tmpDbPath)) {
-      console.log('📋 Copiando base de datos a /tmp...');
-      try {
-        fs.copyFileSync(sourceDbPath, tmpDbPath);
-        console.log('✅ Base de datos copiada a /tmp');
-        dbPath = tmpDbPath;
-      } catch (err) {
-        console.error('❌ Error copiando BD a /tmp:', err.message);
-        console.log('⚠️  Usando ruta original como fallback');
-        dbPath = sourceDbPath;
-      }
-    } else {
-      console.log('✅ Base de datos ya existe en /tmp');
+  console.log('🔍 Verificando archivo fuente...');
+  const sourceExists = fs.existsSync(sourceDbPath);
+  console.log('🔍 Archivo fuente existe:', sourceExists);
+  
+  const tmpExists = fs.existsSync(tmpDbPath);
+  console.log('🔍 Archivo en /tmp existe:', tmpExists);
+  
+  // Siempre intentar usar /tmp
+  if (sourceExists && !tmpExists) {
+    console.log('📋 Copiando base de datos de', sourceDbPath, 'a', tmpDbPath);
+    try {
+      fs.copyFileSync(sourceDbPath, tmpDbPath);
+      console.log('✅ Base de datos copiada exitosamente a /tmp');
       dbPath = tmpDbPath;
+    } catch (err) {
+      console.error('❌ Error copiando BD a /tmp:', err.message);
+      console.log('⚠️  Intentando usar ruta original como fallback');
+      dbPath = sourceDbPath;
     }
+  } else if (tmpExists) {
+    console.log('✅ Usando base de datos existente en /tmp');
+    dbPath = tmpDbPath;
+  } else if (sourceExists) {
+    console.log('⚠️  Archivo fuente existe pero no se pudo copiar, usando fuente');
+    dbPath = sourceDbPath;
   } else {
-    // Si no existe el archivo fuente, intentar usar /tmp directamente
-    console.log('⚠️  Archivo fuente no encontrado, usando /tmp');
+    console.log('⚠️  Ningún archivo encontrado, usando /tmp (se creará vacío)');
     dbPath = tmpDbPath;
   }
+} else {
+  console.log('📌 Usando DB_PATH de variable de entorno:', dbPath);
 }
 
-console.log('📊 Base de datos: ', dbPath);
+console.log('📊 Base de datos final: ', dbPath);
 const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
-    console.error('Error conectando a SQLite:', err.message);
+    console.error('❌ Error conectando a SQLite:', err.message);
   } else {
-    console.log('✅ Conectado a la base de datos SQLite');
+    console.log('✅ Conectado exitosamente a la base de datos SQLite');
   }
 });
 // ==================== ENDPOINTS DE AUTENTICACIÓN ====================
