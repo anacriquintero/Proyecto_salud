@@ -80,11 +80,13 @@ function loadMedicationsData() {
             .map(row => {
               // Buscar código en diferentes columnas posibles
               const code = (row.expedientecum || row.consecutivocum || row.codigo || row.code || '').toString().trim();
-              // Buscar display en diferentes columnas posibles
-              const display = (row.descripcioncomercial || row.producto || row.display || row.descripcion || '').trim();
+              // Usar producto como display principal (más amigable que descripcioncomercial)
+              const display = (row.producto || row.descripcioncomercial || row.display || row.descripcion || '').trim();
               const atc = (row.atc || '').toString().trim();
+              // Guardar también principioactivo para búsqueda
+              const principioActivo = (row.principioactivo || '').trim();
               
-              return { code, display, atc };
+              return { code, display, atc, principioActivo };
             })
             .filter(row => row.code && row.display);
           console.log(`[Terminology] Medicamentos cargados: ${medicationsData.length} códigos desde ${fileName}`);
@@ -112,8 +114,10 @@ function searchData(data, query, limit = 20) {
   for (const item of data) {
     const codeMatch = item.code.toLowerCase().includes(queryLower);
     const displayMatch = item.display.toLowerCase().includes(queryLower);
+    // Buscar también en principio activo si existe (para medicamentos)
+    const principioMatch = item.principioActivo && item.principioActivo.toLowerCase().includes(queryLower);
     
-    if (codeMatch || displayMatch) {
+    if (codeMatch || displayMatch || principioMatch) {
       results.push({
         code: item.code,
         display: item.display,
