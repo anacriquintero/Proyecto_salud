@@ -45,24 +45,38 @@ const upload = multer({ dest: path.join(__dirname, 'uploads') });
 // Conectar a SQLite (usa la ruta correcta de tu BD)
 // En Render, copiamos la BD a /tmp para tener permisos de escritura
 const sourceDbPath = path.join(__dirname, 'database', 'salud_digital_aps.db');
-const dbPath = process.env.DB_PATH || (() => {
-  // Si estamos en producción (Render), usar /tmp
-  if (process.env.RENDER || process.env.NODE_ENV === 'production') {
-    const tmpDbPath = '/tmp/salud_digital_aps.db';
-    // Copiar la BD a /tmp si no existe allí
-    if (!fs.existsSync(tmpDbPath) && fs.existsSync(sourceDbPath)) {
+const tmpDbPath = '/tmp/salud_digital_aps.db';
+
+// Determinar qué ruta usar
+let dbPath = process.env.DB_PATH;
+
+if (!dbPath) {
+  // Si el archivo fuente existe, intentar copiar a /tmp
+  if (fs.existsSync(sourceDbPath)) {
+    console.log('📋 Archivo fuente encontrado:', sourceDbPath);
+    
+    // Intentar copiar a /tmp si no existe allí
+    if (!fs.existsSync(tmpDbPath)) {
       console.log('📋 Copiando base de datos a /tmp...');
       try {
         fs.copyFileSync(sourceDbPath, tmpDbPath);
         console.log('✅ Base de datos copiada a /tmp');
+        dbPath = tmpDbPath;
       } catch (err) {
-        console.error('❌ Error copiando BD:', err.message);
+        console.error('❌ Error copiando BD a /tmp:', err.message);
+        console.log('⚠️  Usando ruta original como fallback');
+        dbPath = sourceDbPath;
       }
+    } else {
+      console.log('✅ Base de datos ya existe en /tmp');
+      dbPath = tmpDbPath;
     }
-    return tmpDbPath;
+  } else {
+    // Si no existe el archivo fuente, intentar usar /tmp directamente
+    console.log('⚠️  Archivo fuente no encontrado, usando /tmp');
+    dbPath = tmpDbPath;
   }
-  return sourceDbPath;
-})();
+}
 
 console.log('📊 Base de datos: ', dbPath);
 const db = new sqlite3.Database(dbPath, (err) => {
