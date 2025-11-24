@@ -53,40 +53,44 @@ console.log('📍 Ruta temporal:', tmpDbPath);
 console.log('📍 __dirname:', __dirname);
 
 // Determinar qué ruta usar
-let dbPath = process.env.DB_PATH;
+// NOTA: En Render siempre usamos /tmp para tener permisos de escritura
+// Ignoramos DB_PATH si está configurado para evitar problemas de permisos
+let dbPath = null;
 
-if (!dbPath) {
-  console.log('🔍 Verificando archivo fuente...');
-  const sourceExists = fs.existsSync(sourceDbPath);
-  console.log('🔍 Archivo fuente existe:', sourceExists);
-  
-  const tmpExists = fs.existsSync(tmpDbPath);
-  console.log('🔍 Archivo en /tmp existe:', tmpExists);
-  
-  // Siempre intentar usar /tmp
-  if (sourceExists && !tmpExists) {
-    console.log('📋 Copiando base de datos de', sourceDbPath, 'a', tmpDbPath);
-    try {
-      fs.copyFileSync(sourceDbPath, tmpDbPath);
-      console.log('✅ Base de datos copiada exitosamente a /tmp');
-      dbPath = tmpDbPath;
-    } catch (err) {
-      console.error('❌ Error copiando BD a /tmp:', err.message);
-      console.log('⚠️  Intentando usar ruta original como fallback');
-      dbPath = sourceDbPath;
-    }
-  } else if (tmpExists) {
-    console.log('✅ Usando base de datos existente en /tmp');
+console.log('🔍 Verificando archivo fuente...');
+const sourceExists = fs.existsSync(sourceDbPath);
+console.log('🔍 Archivo fuente existe:', sourceExists);
+
+const tmpExists = fs.existsSync(tmpDbPath);
+console.log('🔍 Archivo en /tmp existe:', tmpExists);
+
+// Siempre intentar usar /tmp (ignorar DB_PATH en Render)
+if (sourceExists && !tmpExists) {
+  console.log('📋 Copiando base de datos de', sourceDbPath, 'a', tmpDbPath);
+  try {
+    fs.copyFileSync(sourceDbPath, tmpDbPath);
+    console.log('✅ Base de datos copiada exitosamente a /tmp');
     dbPath = tmpDbPath;
-  } else if (sourceExists) {
-    console.log('⚠️  Archivo fuente existe pero no se pudo copiar, usando fuente');
+  } catch (err) {
+    console.error('❌ Error copiando BD a /tmp:', err.message);
+    console.log('⚠️  Intentando usar ruta original como fallback');
     dbPath = sourceDbPath;
-  } else {
-    console.log('⚠️  Ningún archivo encontrado, usando /tmp (se creará vacío)');
-    dbPath = tmpDbPath;
   }
+} else if (tmpExists) {
+  console.log('✅ Usando base de datos existente en /tmp');
+  dbPath = tmpDbPath;
+} else if (sourceExists) {
+  console.log('⚠️  Archivo fuente existe pero no se pudo copiar, usando fuente');
+  dbPath = sourceDbPath;
 } else {
-  console.log('📌 Usando DB_PATH de variable de entorno:', dbPath);
+  console.log('⚠️  Ningún archivo encontrado, usando /tmp (se creará vacío)');
+  dbPath = tmpDbPath;
+}
+
+// Si DB_PATH está configurado pero no es /tmp, advertir
+if (process.env.DB_PATH && process.env.DB_PATH !== tmpDbPath) {
+  console.log('⚠️  DB_PATH está configurado pero se está usando /tmp para evitar problemas de permisos');
+  console.log('⚠️  DB_PATH configurado:', process.env.DB_PATH);
 }
 
 console.log('📊 Base de datos final: ', dbPath);
