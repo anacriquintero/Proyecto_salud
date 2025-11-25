@@ -1,11 +1,13 @@
 const fetch = require('node-fetch');
 const FormData = require('form-data');
+const { transcribeWithWhisper } = require('./whisperStt');
 
 // Modelo predeterminado: Whisper-small es más ligero y generalmente disponible en el router gratuito
 // Alternativas: openai/whisper-base, openai/whisper-medium
 const HF_DEFAULT_MODEL =
   process.env.HF_STT_MODEL || 'openai/whisper-small';
-const DEFAULT_PROVIDER = (process.env.STT_DEFAULT_PROVIDER || 'huggingface').toLowerCase();
+// Proveedor por defecto: Whisper local (gratuito, sin límites)
+const DEFAULT_PROVIDER = (process.env.STT_DEFAULT_PROVIDER || 'whisper').toLowerCase();
 
 async function transcribeWithHuggingFace({ audioBuffer, contentType, filename }) {
   const token = process.env.HF_API_TOKEN;
@@ -124,6 +126,7 @@ async function transcribeWithElevenLabs({ audioBuffer, contentType, filename }) 
 }
 
 const PROVIDERS = {
+  whisper: transcribeWithWhisper,
   huggingface: transcribeWithHuggingFace,
   elevenlabs: transcribeWithElevenLabs
 };
