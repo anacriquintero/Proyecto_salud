@@ -12,6 +12,9 @@ function loadCIE10Data() {
 
   // Intentar diferentes rutas posibles
   const possiblePaths = [
+    // Nuevos archivos ubicados dentro del backend para entornos productivos
+    path.join(__dirname, '../terminology-data'),
+    // Rutas heredadas (mantener por compatibilidad local)
     path.join(__dirname, '../../scripts/etl/data'),
     path.join(process.cwd(), 'scripts/etl/data'),
     path.join(process.cwd(), 'backend/scripts/etl/data')
@@ -57,6 +60,9 @@ function loadMedicationsData() {
 
   // Intentar diferentes rutas posibles
   const possiblePaths = [
+    // Nuevos archivos ubicados dentro del backend para entornos productivos
+    path.join(__dirname, '../terminology-data'),
+    // Rutas heredadas (mantener por compatibilidad local)
     path.join(__dirname, '../../scripts/etl/data'),
     path.join(process.cwd(), 'scripts/etl/data'),
     path.join(process.cwd(), 'backend/scripts/etl/data')

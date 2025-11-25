@@ -177,8 +177,8 @@ curl http://localhost:8180/fhir/metadata
 - **Ruta:** `scripts/etl/`
 - **Script principal:** `node scripts/etl/loadTerminology.js --baseUrl=http://localhost:8180/fhir`
 - **Catálogos oficiales:**
-  - `scripts/etl/data/cie10_colombia.csv` → exportar desde el Ministerio de Salud / DANE (CIE-10) en formato CSV (`Código`, `Descripción`).
-  - `scripts/etl/data/cum_medicamentos.csv` → descargar desde datos abiertos INVIMA: <https://www.datos.gov.co/d/i7cb-raxc> (opción “Download” → CSV).
+  - `backend/terminology-data/cie10_colombia.csv` → exportar desde el Ministerio de Salud / DANE (CIE-10) en formato CSV (`Código`, `Descripción`).
+  - `backend/terminology-data/cum_medicamentos.csv` → descargar desde datos abiertos INVIMA: <https://www.datos.gov.co/d/i7cb-raxc> (opción “Download” → CSV).
 - **Archivos demo:** `cie10_subset.csv`, `meds_subset.csv` (solo para pruebas si no se dispone de los oficiales).
 - El script publica:
   - Catálogo oficial: `CodeSystem/cie10-colombia-oficial`, `ValueSet/vs-cie10-colombia-oficial`
