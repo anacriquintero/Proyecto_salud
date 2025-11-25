@@ -2,8 +2,45 @@
 
 Frontend:
 https://proyectosalud8.vercel.app/
+
+
 Backend:
 https://proyecto-salud-digital-2.onrender.com/
+
+Cuentas demo:
+👨‍⚕️ MÉDICO
+   Email: medico1@saludigital.edu.co
+   Password: 1000000001
+
+🧠 PSICÓLOGO
+   Email: psicologo@salud.com
+   Password: psic123
+
+👩‍⚕️ AUXILIAR DE ENFERMERÍA
+   Email: auxiliar@salud.com
+   Password: aux123
+
+🛡️ ENFERMERO JEFE
+   Email: enfermerojefe@salud.com
+   Password: 11223344
+
+🏋🏻‍♀️FISIOTERAPEUTA
+Email: fisioterapeuta@salud.com
+Password: 900000001
+
+🥜NUTRICIONISTA 
+Email: nutricionista@salud.com
+Password: nutri123
+
+🦻🏻FONOAUDIOLOGO
+Email: fonoaudiologo@salud.com
+Password: fono123/900000003
+
+🦷ODONTOLOGO
+Email: odontologo@salud.com
+Password: odonto123/900000004
+
+
 
 ## 📋 Descripción General
 
