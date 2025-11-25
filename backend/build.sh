@@ -11,7 +11,7 @@ python3 --version || python --version
 
 echo "📦 Instalando dependencias de Python para Whisper..."
 cd integrations/whisper_stt
-pip3 install -r requirements.txt --user || pip install -r requirements.txt --user
+pip3 install -r requirements.txt || pip install -r requirements.txt
 cd ../..
 
 echo "✅ Build completado"
