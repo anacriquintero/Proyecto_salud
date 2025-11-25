@@ -2865,18 +2865,22 @@ app.get('/api/test', (req, res) => {
 // Genera audio a partir de texto usando ElevenLabs y lo devuelve como audio/mpeg
 app.post('/api/tts', async (req, res) => {
   try {
+    console.log('[TTS] Request recibido:', { texto: req.body?.texto?.substring(0, 50) + '...', voiceId: req.body?.voiceId });
     const { texto, voiceId } = req.body || {};
     if (!texto || typeof texto !== 'string') {
+      console.log('[TTS] Error: Falta el texto');
       return res.status(400).json({ error: 'Falta el texto' });
     }
 
     const apiKey = process.env.ELEVENLABS_API_KEY;
     if (!apiKey) {
+      console.log('[TTS] Error: Falta ELEVENLABS_API_KEY');
       return res.status(500).json({ error: 'Falta ELEVENLABS_API_KEY en el servidor' });
     }
 
     const selectedVoiceId = voiceId || 'EXAVITQu4vr4xnSDxMaL';
     const url = `https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId}`;
+    console.log('[TTS] Llamando a ElevenLabs:', url);
 
     const response = await fetch(url, {
       method: 'POST',
@@ -2892,9 +2896,11 @@ app.post('/api/tts', async (req, res) => {
 
     if (!response.ok) {
       const errorText = await response.text();
+      console.error('[TTS] Error ElevenLabs:', response.status, errorText);
       return res.status(500).json({ error: 'Error ElevenLabs', details: errorText });
     }
 
+    console.log('[TTS] Audio generado exitosamente');
     const audioBuffer = Buffer.from(await response.arrayBuffer());
 
     // Opción A: devolver el audio directamente como streaming
@@ -2909,7 +2915,7 @@ app.post('/api/tts', async (req, res) => {
     // fs.writeFileSync(audioPath, audioBuffer);
     // return res.json({ audioUrl: '/voz.mp3' });
   } catch (err) {
-    console.error('TTS error:', err);
+    console.error('[TTS] Error interno:', err);
     return res.status(500).json({ error: 'Error interno del servidor' });
   }
 });
@@ -2918,11 +2924,19 @@ app.post('/api/tts', async (req, res) => {
 // Recibe un archivo de audio (multipart/form-data campo "audio") y devuelve la transcripción
 app.post('/api/stt', upload.single('audio'), async (req, res) => {
   try {
+    console.log('[STT] Request recibido:', { 
+      filename: req.file?.originalname, 
+      size: req.file?.size, 
+      mimetype: req.file?.mimetype 
+    });
+    
     const apiKey = process.env.ELEVENLABS_API_KEY;
     if (!apiKey) {
+      console.log('[STT] Error: Falta ELEVENLABS_API_KEY');
       return res.status(500).json({ error: 'Falta ELEVENLABS_API_KEY en el servidor' });
     }
     if (!req.file) {
+      console.log('[STT] Error: Falta archivo de audio');
       return res.status(400).json({ error: 'Falta archivo de audio' });
     }
 
@@ -2937,6 +2951,8 @@ app.post('/api/stt', upload.single('audio'), async (req, res) => {
     form.append('language_code', 'es');
 
     const sttUrl = 'https://api.elevenlabs.io/v1/speech-to-text';
+    console.log('[STT] Llamando a ElevenLabs:', sttUrl);
+    
     const response = await fetch(sttUrl, {
       method: 'POST',
       headers: { 'xi-api-key': apiKey, 'Accept': 'application/json', ...form.getHeaders() },
@@ -2948,14 +2964,16 @@ app.post('/api/stt', upload.single('audio'), async (req, res) => {
 
     if (!response.ok) {
       const errText = await response.text().catch(() => '');
+      console.error('[STT] Error ElevenLabs:', response.status, errText);
       return res.status(502).json({ error: 'Error ElevenLabs STT', status: response.status, details: errText });
     }
 
+    console.log('[STT] Transcripción exitosa');
     const data = await response.json().catch(() => null);
     // Respuesta esperada: { text: "..." } u otro formato compatible
     return res.json(data || { text: '' });
   } catch (err) {
-    console.error('STT error:', err);
+    console.error('[STT] Error interno:', err);
     return res.status(500).json({ error: 'Error interno del servidor' });
   }
 });
