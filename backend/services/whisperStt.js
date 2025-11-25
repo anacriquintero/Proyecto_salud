@@ -41,36 +41,84 @@ async function transcribeWithWhisper({ audioBuffer, contentType, filename }) {
     console.log(`[Whisper] Modelo: ${WHISPER_MODEL}, Idioma: es, Timeout: 5 minutos`);
     const startTime = Date.now();
 
-    const { stdout, stderr } = await execAsync(command, {
-      maxBuffer: 10 * 1024 * 1024, // 10MB buffer
-      timeout: 300000 // 5 minutos timeout (la primera vez puede tardar por descarga del modelo)
-    });
+    let stdout = '';
+    let stderr = '';
+    
+    try {
+      const result = await execAsync(command, {
+        maxBuffer: 10 * 1024 * 1024, // 10MB buffer
+        timeout: 300000 // 5 minutos timeout (la primera vez puede tardar por descarga del modelo)
+      });
+      stdout = result.stdout || '';
+      stderr = result.stderr || '';
+    } catch (execError) {
+      // Capturar stdout y stderr del error
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || '';
+      
+      // Si hay stdout con JSON, intentar parsearlo primero
+      if (stdout.trim()) {
+        try {
+          const errorResult = JSON.parse(stdout.trim());
+          if (errorResult.error) {
+            throw new Error(`Whisper error: ${errorResult.error}`);
+          }
+        } catch (parseError) {
+          // Si no es JSON válido, continuar con el manejo normal
+        }
+      }
+      
+      // Re-lanzar el error para que se maneje en el catch principal
+      throw execError;
+    }
 
     const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(2);
     console.log(`[Whisper] Proceso completado en ${elapsedTime} segundos`);
 
+    // Procesar stderr (logs de progreso y warnings)
     if (stderr && stderr.trim()) {
-      // Filtrar warnings comunes de Whisper que no son errores
       const stderrLines = stderr.trim().split('\n');
-      const importantWarnings = stderrLines.filter(line => 
+      const progressLogs = stderrLines.filter(line => line.includes('[Whisper-Python]'));
+      const warnings = stderrLines.filter(line => 
+        !line.includes('[Whisper-Python]') &&
         !line.includes('torch') && 
         !line.includes('UserWarning') &&
-        !line.includes('FutureWarning')
+        !line.includes('FutureWarning') &&
+        line.trim()
       );
-      if (importantWarnings.length > 0) {
-        console.warn(`[Whisper] Warnings importantes: ${importantWarnings.join('; ')}`);
+      
+      // Mostrar logs de progreso
+      progressLogs.forEach(log => console.log(log));
+      
+      // Mostrar warnings importantes
+      if (warnings.length > 0) {
+        console.warn(`[Whisper] Warnings:`, warnings.join('; '));
       }
     }
 
-    // Parsear resultado JSON
-    const result = JSON.parse(stdout.trim());
+    // Parsear resultado JSON de stdout
+    if (!stdout || !stdout.trim()) {
+      throw new Error('Whisper no retornó ningún resultado. Verifica los logs de Python.');
+    }
+
+    let result;
+    try {
+      result = JSON.parse(stdout.trim());
+    } catch (parseError) {
+      console.error(`[Whisper] Error parseando JSON:`, stdout.substring(0, 200));
+      throw new Error(`Whisper: Error parseando respuesta. Output: ${stdout.substring(0, 200)}`);
+    }
     
     if (result.error) {
       throw new Error(`Whisper error: ${result.error}`);
     }
 
-    if (!result.success || !result.text) {
-      throw new Error('Whisper no retornó texto transcrito');
+    if (!result.success) {
+      throw new Error(`Whisper: Proceso falló. ${result.error || 'Sin detalles'}`);
+    }
+
+    if (!result.text) {
+      throw new Error('Whisper: No se obtuvo texto transcrito (resultado vacío)');
     }
 
     console.log(`[Whisper] Transcripción exitosa: ${result.text.substring(0, 50)}...`);
@@ -78,26 +126,40 @@ async function transcribeWithWhisper({ audioBuffer, contentType, filename }) {
 
   } catch (error) {
     console.error(`[Whisper] Error capturado:`, error.message);
-    console.error(`[Whisper] Stack:`, error.stack);
+    if (error.stack) {
+      console.error(`[Whisper] Stack:`, error.stack.substring(0, 500));
+    }
+    
+    // Capturar stderr si está disponible
+    const stderr = error.stderr || '';
+    if (stderr) {
+      console.error(`[Whisper] stderr:`, stderr.substring(0, 500));
+    }
     
     // Si es timeout
-    if (error.message.includes('timeout') || error.code === 'ETIMEDOUT') {
+    if (error.message.includes('timeout') || error.code === 'ETIMEDOUT' || error.signal === 'SIGTERM') {
       throw new Error(`Whisper: Timeout después de 5 minutos. La primera transcripción puede tardar más por la descarga del modelo (~74 MB). Intenta nuevamente.`);
     }
     
-    // Si el error menciona formato, intentamos convertir
+    // Si el error menciona formato
     if (error.message.includes('format') || error.message.includes('codec')) {
-      console.log(`[Whisper] Intentando convertir audio a formato compatible...`);
       throw new Error(`Whisper: Error procesando audio. Formato puede no ser compatible. Detalles: ${error.message}`);
     }
     
     // Si el error es de Python o del script
-    if (error.message.includes('Command failed') || error.stderr) {
-      const errorDetails = error.stderr || error.message;
-      console.error(`[Whisper] Error de Python:`, errorDetails);
-      throw new Error(`Whisper: Error ejecutando script Python. Verifica que Whisper esté instalado. Detalles: ${errorDetails.substring(0, 200)}`);
+    if (error.message.includes('Command failed') || error.code || stderr) {
+      const errorDetails = stderr || error.message;
+      const pythonError = errorDetails.includes('ImportError') || errorDetails.includes('ModuleNotFoundError');
+      
+      if (pythonError) {
+        throw new Error(`Whisper: Dependencias de Python no instaladas. Ejecuta: pip install openai-whisper torch`);
+      }
+      
+      console.error(`[Whisper] Error de Python/Script:`, errorDetails.substring(0, 500));
+      throw new Error(`Whisper: Error ejecutando script Python. Detalles: ${errorDetails.substring(0, 300)}`);
     }
     
+    // Error genérico
     throw new Error(`Whisper: ${error.message}`);
   } finally {
     // Limpiar archivo temporal
