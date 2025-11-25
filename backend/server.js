@@ -5,13 +5,13 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const fetch = require('node-fetch');
-const FormData = require('form-data');
 const multer = require('multer');
 const adresService = require('./services/adresService');
 const adresScraper = require('./services/adresScraperService');
 const terminologyClient = require('./services/terminologyClient');
 const fhirClient = require('./services/fhirClient');
 const aiService = require('./services/aiService');
+const sttProviders = require('./services/sttProviders');
 require('dotenv').config();
 
 // Verificar carga de claves sensibles sin exponerlas completas
@@ -2920,21 +2920,20 @@ app.post('/api/tts', async (req, res) => {
   }
 });
 
-// ==================== ENDPOINT STT ELEVENLABS ====================
+// ==================== ENDPOINT STT ====================
 // Recibe un archivo de audio (multipart/form-data campo "audio") y devuelve la transcripción
 app.post('/api/stt', upload.single('audio'), async (req, res) => {
   try {
-    console.log('[STT] Request recibido:', { 
-      filename: req.file?.originalname, 
-      size: req.file?.size, 
-      mimetype: req.file?.mimetype 
+    const provider =
+      (req.query.provider || req.body?.provider || process.env.STT_DEFAULT_PROVIDER || sttProviders.DEFAULT_PROVIDER).toLowerCase();
+
+    console.log('[STT] Request recibido:', {
+      provider,
+      filename: req.file?.originalname,
+      size: req.file?.size,
+      mimetype: req.file?.mimetype
     });
-    
-    const apiKey = process.env.ELEVENLABS_API_KEY;
-    if (!apiKey) {
-      console.log('[STT] Error: Falta ELEVENLABS_API_KEY');
-      return res.status(500).json({ error: 'Falta ELEVENLABS_API_KEY en el servidor' });
-    }
+
     if (!req.file) {
       console.log('[STT] Error: Falta archivo de audio');
       return res.status(400).json({ error: 'Falta archivo de audio' });
@@ -2944,37 +2943,23 @@ app.post('/api/stt', upload.single('audio'), async (req, res) => {
     const audioBuffer = fs.readFileSync(inputFilePath);
     const contentType = (req.file.mimetype || 'audio/webm').split(';')[0];
 
-    // Enviar como multipart/form-data con campo "file" + params del modelo
-    const form = new FormData();
-    form.append('file', audioBuffer, { filename: req.file.originalname || 'audio.webm', contentType });
-    form.append('model_id', 'scribe_v1');
-    form.append('language_code', 'es');
-
-    const sttUrl = 'https://api.elevenlabs.io/v1/speech-to-text';
-    console.log('[STT] Llamando a ElevenLabs:', sttUrl);
-    
-    const response = await fetch(sttUrl, {
-      method: 'POST',
-      headers: { 'xi-api-key': apiKey, 'Accept': 'application/json', ...form.getHeaders() },
-      body: form
-    });
-
-    // Limpiar archivo temporal
-    fs.unlink(inputFilePath, () => {});
-
-    if (!response.ok) {
-      const errText = await response.text().catch(() => '');
-      console.error('[STT] Error ElevenLabs:', response.status, errText);
-      return res.status(502).json({ error: 'Error ElevenLabs STT', status: response.status, details: errText });
+    let text = '';
+    try {
+      text = await sttProviders.transcribe({
+        provider,
+        audioBuffer,
+        contentType,
+        filename: req.file.originalname
+      });
+    } finally {
+      fs.unlink(inputFilePath, () => {});
     }
 
-    console.log('[STT] Transcripción exitosa');
-    const data = await response.json().catch(() => null);
-    // Respuesta esperada: { text: "..." } u otro formato compatible
-    return res.json(data || { text: '' });
+    console.log('[STT] Transcripción exitosa con proveedor', provider);
+    return res.json({ text, provider });
   } catch (err) {
-    console.error('[STT] Error interno:', err);
-    return res.status(500).json({ error: 'Error interno del servidor' });
+    console.error('[STT] Error interno:', err.message);
+    return res.status(500).json({ error: err.message || 'Error interno del servidor' });
   }
 });
 
