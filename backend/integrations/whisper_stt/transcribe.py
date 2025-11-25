@@ -7,10 +7,28 @@ import sys
 import os
 import json
 import time
+import signal
 
 # Logs de progreso (van a stderr para no interferir con JSON en stdout)
 def log_progress(message):
     print(f"[Whisper-Python] {message}", file=sys.stderr, flush=True)
+
+# Variable global para manejar señales de terminación
+terminate_requested = False
+
+def signal_handler(signum, frame):
+    """Maneja señales de terminación (SIGTERM, SIGINT)"""
+    global terminate_requested
+    terminate_requested = True
+    log_progress(f"Señal de terminación recibida ({signum})")
+    # Retornar error JSON y salir
+    error = {'error': 'Proceso interrumpido por timeout o señal de terminación', 'success': False}
+    print(json.dumps(error))
+    sys.exit(1)
+
+# Registrar manejadores de señales
+signal.signal(signal.SIGTERM, signal_handler)
+signal.signal(signal.SIGINT, signal_handler)
 
 try:
     import whisper
@@ -31,13 +49,24 @@ def transcribe_audio(audio_path, model_name='base', language='es'):
     Returns:
         str: Texto transcrito
     """
+    global terminate_requested
+    
     try:
         log_progress(f"Iniciando transcripción con modelo {model_name}, idioma {language}")
+        
+        # Verificar si se solicitó terminación antes de empezar
+        if terminate_requested:
+            raise InterruptedError("Proceso interrumpido antes de iniciar")
         
         # Cargar el modelo (se descarga automáticamente la primera vez)
         log_progress(f"Cargando modelo {model_name}...")
         start_load = time.time()
         model = whisper.load_model(model_name)
+        
+        # Verificar si se solicitó terminación durante la carga
+        if terminate_requested:
+            raise InterruptedError("Proceso interrumpido durante la carga del modelo")
+        
         load_time = time.time() - start_load
         log_progress(f"Modelo cargado en {load_time:.2f} segundos")
         
@@ -45,6 +74,11 @@ def transcribe_audio(audio_path, model_name='base', language='es'):
         log_progress(f"Transcribiendo audio: {audio_path}")
         start_transcribe = time.time()
         result = model.transcribe(audio_path, language=language, task='transcribe')
+        
+        # Verificar si se solicitó terminación durante la transcripción
+        if terminate_requested:
+            raise InterruptedError("Proceso interrumpido durante la transcripción")
+        
         transcribe_time = time.time() - start_transcribe
         log_progress(f"Transcripción completada en {transcribe_time:.2f} segundos")
         
@@ -54,6 +88,12 @@ def transcribe_audio(audio_path, model_name='base', language='es'):
             log_progress("Advertencia: El resultado está vacío")
         return text
     
+    except KeyboardInterrupt:
+        log_progress("Interrupción por teclado detectada")
+        raise
+    except InterruptedError:
+        log_progress("Proceso interrumpido por señal de terminación")
+        raise
     except Exception as e:
         log_progress(f"Error en transcribe_audio: {type(e).__name__}: {str(e)}")
         raise
