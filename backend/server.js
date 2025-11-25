@@ -14,6 +14,15 @@ const fhirClient = require('./services/fhirClient');
 const aiService = require('./services/aiService');
 require('dotenv').config();
 
+// Verificar carga de claves sensibles sin exponerlas completas
+const elevenKey = process.env.ELEVENLABS_API_KEY || '';
+if (elevenKey) {
+  const masked = `${elevenKey.slice(0, 6)}***${elevenKey.slice(-4)}`;
+  console.log('🔐 ELEVENLABS_API_KEY cargada:', masked);
+} else {
+  console.warn('⚠️ ELEVENLABS_API_KEY NO está configurada en este entorno');
+}
+
 // ✅ PRIMERO DECLARAR app
 const app = express();
 
