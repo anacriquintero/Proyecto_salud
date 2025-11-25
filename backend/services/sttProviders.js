@@ -1,13 +1,14 @@
 const fetch = require('node-fetch');
 const FormData = require('form-data');
-const { transcribeWithWhisper } = require('./whisperStt');
+// Whisper deshabilitado temporalmente - causaba reinicios del servidor
+// const { transcribeWithWhisper } = require('./whisperStt');
 
 // Modelo predeterminado: Whisper-small es más ligero y generalmente disponible en el router gratuito
 // Alternativas: openai/whisper-base, openai/whisper-medium
 const HF_DEFAULT_MODEL =
   process.env.HF_STT_MODEL || 'openai/whisper-small';
-// Proveedor por defecto: Whisper local (gratuito, sin límites)
-const DEFAULT_PROVIDER = (process.env.STT_DEFAULT_PROVIDER || 'whisper').toLowerCase();
+// Proveedor por defecto: ElevenLabs (Whisper deshabilitado temporalmente)
+const DEFAULT_PROVIDER = (process.env.STT_DEFAULT_PROVIDER || 'elevenlabs').toLowerCase();
 
 async function transcribeWithHuggingFace({ audioBuffer, contentType, filename }) {
   const token = process.env.HF_API_TOKEN;
@@ -123,6 +124,11 @@ async function transcribeWithElevenLabs({ audioBuffer, contentType, filename }) 
 
   const data = await response.json().catch(() => null);
   return data?.text || '';
+}
+
+// Whisper deshabilitado - retorna error controlado sin ejecutar nada
+async function transcribeWithWhisper({ audioBuffer, contentType, filename }) {
+  throw new Error('Whisper local está deshabilitado temporalmente. Por favor, usa ElevenLabs o Hugging Face como proveedor STT.');
 }
 
 const PROVIDERS = {
