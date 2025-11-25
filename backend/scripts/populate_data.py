@@ -97,7 +97,7 @@ def obtener_o_crear_usuario_medico():
     # Buscar usuario médico existente
     cursor.execute("""
         SELECT usuario_id FROM Usuarios 
-        WHERE rol_id = (SELECT rol_id FROM Roles WHERE nombre = 'Médico' LIMIT 1)
+        WHERE rol_id = (SELECT rol_id FROM Roles WHERE nombre_rol = 'Médico' LIMIT 1)
         OR email LIKE '%medico%' OR email LIKE '%doctor%'
         LIMIT 1
     """)
@@ -108,15 +108,27 @@ def obtener_o_crear_usuario_medico():
         print(f"✅ Usando usuario médico existente: {usuario_id}")
         return usuario_id
     
-    # Si no existe, crear uno
+    # Obtener o crear rol Médico
+    cursor.execute("SELECT rol_id FROM Roles WHERE nombre_rol = 'Médico' LIMIT 1")
+    rol_row = cursor.fetchone()
+    
+    if rol_row:
+        rol_id = rol_row['rol_id']
+    else:
+        # Crear rol Médico si no existe
+        cursor.execute("INSERT INTO Roles (nombre_rol) VALUES ('Médico')")
+        rol_id = cursor.lastrowid
+        print(f"✅ Rol Médico creado: {rol_id}")
+    
+    # Crear usuario médico
     nombre = fake.name()
     email = f"medico.{fake.user_name()}@salud.gov.co"
     numero_doc = str(fake.random_number(digits=10, fix_len=True))
     
     cursor.execute("""
-        INSERT INTO Usuarios (nombre_completo, email, numero_documento, activo)
-        VALUES (?, ?, ?, 1)
-    """, (nombre, email, numero_doc))
+        INSERT INTO Usuarios (nombre_completo, email, numero_documento, rol_id, activo)
+        VALUES (?, ?, ?, ?, 1)
+    """, (nombre, email, numero_doc, rol_id))
     
     usuario_id = cursor.lastrowid
     print(f"✅ Usuario médico creado: {usuario_id} - {nombre}")
