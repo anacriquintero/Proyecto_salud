@@ -39,7 +39,7 @@ El sistema cuenta con una arquitectura de aplicación web moderna, con un fronte
 - **Node.js** (v18 o superior)
 - **npm** (o un gestor de paquetes equivalente)
 - **Python** (v3.x) con las librerías `scikit-learn` y `numpy`.
-- Un servidor **HAPI FHIR** en ejecución (para la funcionalidad de interoperabilidad). Puede usar la configuración de Docker en `sandbox/hapi-fhir/`.
+- **Servidor FHIR** (opcional): El sistema usa HAPI FHIR público por defecto (`https://hapi.fhir.org/baseR4`), no requiere configuración adicional. Para desarrollo local, puede usar Docker con la configuración en `sandbox/hapi-fhir/`.
 
 ### **1. Configuración del Backend**
 
@@ -60,8 +60,11 @@ c. **Cree el archivo de variables de entorno:**
    # Ruta a la base de datos SQLite
    DB_PATH=./salud_digital_aps.db
 
-   # URL del servidor FHIR (usar el de HAPI FHIR si se ejecuta localmente)
-   FHIR_BASE_URL=http://localhost:8080/fhir
+   # URL del servidor FHIR
+   # Opción 1: HAPI FHIR público (recomendado para estudiantes, no requiere configuración)
+   FHIR_BASE_URL=https://hapi.fhir.org/baseR4
+   # Opción 2: HAPI FHIR local (requiere Docker)
+   # FHIR_BASE_URL=http://localhost:8080/hapi-fhir-jpaserver/fhir
 
    # --- Claves de API (Opcionales) ---
 
